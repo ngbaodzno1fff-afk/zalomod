@@ -22,5 +22,7 @@
 + (NSInteger)customTTLSeconds;
 + (BOOL)isGhostSeenEnabled;
 + (BOOL)isHideTypingEnabled;
++ (BOOL)isBugOriginalEnabled;
++ (BOOL)isBugZBusinessEnabled;
 
 @end
