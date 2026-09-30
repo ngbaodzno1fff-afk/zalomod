@@ -256,49 +256,92 @@ static void hook_recallHandler(id self, SEL _cmd, id arg1, id arg2) {
 @end
 
 // =========================================================================
-// 6. BUG ZLSTYLE & NHÃN DOANH NGHIỆP ZBUSINESS PRO (CLIENT-SIDE)
+// 6. BUG ZLSTYLE & NHÃN DOANH NGHIỆP ZBUSINESS (CLIENT-SIDE)
 // =========================================================================
 @interface UIViewController (ZaloModProfileSpoof)
 @end
 
 @implementation UIViewController (ZaloModProfileSpoof)
+
 - (void)zaloMod_viewDidAppear:(BOOL)animated {
     [self zaloMod_viewDidAppear:animated];
-
-    if (![ZaloModViewController isBugZBusinessEnabled]) return;
-
-    NSString *className = NSStringFromClass([self class]);
-    if ([className containsString:@"Profile"] || [className containsString:@"UserDetail"] || [className containsString:@"Account"]) {
+    if ([ZaloModViewController isBugZBusinessEnabled]) {
         [self injectZBusinessBadgeAndFrame];
     }
 }
 
+- (void)zaloMod_viewDidLayoutSubviews {
+    [self zaloMod_viewDidLayoutSubviews];
+    if ([ZaloModViewController isBugZBusinessEnabled]) {
+        [self injectZBusinessBadgeAndFrame];
+    }
+}
+
+- (UILabel *)findNameLabelInViewHierarchy:(UIView *)rootView {
+    if ([rootView isKindOfClass:[UILabel class]]) {
+        UILabel *lbl = (UILabel *)rootView;
+        if (lbl.tag != 888999 && lbl.text.length > 0 && lbl.font.pointSize >= 15.0 && !lbl.hidden) {
+            if (![lbl.text containsString:@":"] && ![lbl.text isEqualToString:@"Business"] && ![lbl.text containsString:@"Đang hoạt động"]) {
+                return lbl;
+            }
+        }
+    }
+    for (UIView *sub in rootView.subviews) {
+        UILabel *found = [self findNameLabelInViewHierarchy:sub];
+        if (found) return found;
+    }
+    return nil;
+}
+
 - (void)injectZBusinessBadgeAndFrame {
-    // 1. Tìm hoặc gắn nhãn ZBusiness Pro vàng
-    UIView *existingBadge = [self.view viewWithTag:888999];
-    if (!existingBadge) {
-        UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(20, 110, 160, 24)];
+    NSString *className = NSStringFromClass([self class]);
+    BOOL isTargetVC = [className containsString:@"Profile"] || 
+                      [className containsString:@"UserDetail"] || 
+                      [className containsString:@"Account"] ||
+                      [className containsString:@"Chat"] ||
+                      [className containsString:@"Navigation"];
+
+    if (!isTargetVC && self.view.bounds.size.height < 500) return;
+
+    UILabel *nameLabel = [self findNameLabelInViewHierarchy:self.view];
+    if (!nameLabel || !nameLabel.superview) return;
+
+    UIView *parent = nameLabel.superview;
+
+    // 1. Tạo nhãn "Business" chuẩn y chang thật (Nền xanh đen, chữ xanh dương nhạt)
+    UILabel *badge = (UILabel *)[parent viewWithTag:888999];
+    if (!badge) {
+        badge = [[UILabel alloc] init];
         badge.tag = 888999;
-        badge.text = @"👑 ZBusiness Pro";
-        badge.font = [UIFont boldSystemFontOfSize:11.5];
-        badge.textColor = [UIColor blackColor];
-        badge.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.95];
+        badge.text = @"Business";
+        badge.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightMedium];
+        badge.textColor = [UIColor colorWithRed:0.29 green:0.64 blue:0.89 alpha:1.0]; // Xanh nhạt #4ba3e3
+        badge.backgroundColor = [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95]; // Xanh đậm #0e334a
         badge.textAlignment = NSTextAlignmentCenter;
-        badge.layer.cornerRadius = 12.0;
-        badge.layer.borderColor = [UIColor whiteColor].CGColor;
-        badge.layer.borderWidth = 1.0;
+        badge.layer.cornerRadius = 4.0;
         badge.clipsToBounds = YES;
-        [self.view addSubview:badge];
+        [parent addSubview:badge];
     }
 
+    CGSize nameSize = [nameLabel.text sizeWithAttributes:@{NSFontAttributeName: nameLabel.font ?: [UIFont systemFontOfSize:17.0]}];
+    CGFloat actualW = MIN(nameLabel.bounds.size.width, nameSize.width);
+
+    CGFloat badgeW = 58.0;
+    CGFloat badgeH = 20.0;
+    CGFloat badgeX = nameLabel.frame.origin.x + actualW + 7.0;
+    CGFloat badgeY = nameLabel.frame.origin.y + (nameLabel.frame.size.height - badgeH) / 2.0;
+
+    badge.frame = CGRectMake(badgeX, badgeY, badgeW, badgeH);
+    badge.hidden = ![ZaloModViewController isBugZBusinessEnabled];
+
     // 2. Viền phát sáng hoàng gia ZLStyle quanh avatar
-    for (UIView *sub in self.view.subviews) {
-        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 60 && sub.bounds.size.width <= 140) {
+    for (UIView *sub in parent.subviews) {
+        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 40 && sub.bounds.size.width <= 140) {
             sub.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.9].CGColor;
-            sub.layer.borderWidth = 3.0;
+            sub.layer.borderWidth = 2.5;
             sub.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.8 blue:0.0 alpha:1.0].CGColor;
-            sub.layer.shadowRadius = 10.0;
-            sub.layer.shadowOpacity = 0.9;
+            sub.layer.shadowRadius = 8.0;
+            sub.layer.shadowOpacity = 0.85;
             break;
         }
     }
@@ -391,8 +434,9 @@ static void installAllZaloModHooks(void) {
             free(classes);
         }
 
-        // 5. Hook Profile hiển thị ZBusiness Pro & ZLStyle
+        // 5. Hook Profile hiển thị ZBusiness & ZLStyle
         swizzleInstanceMethod([UIViewController class], @selector(viewDidAppear:), @selector(zaloMod_viewDidAppear:));
+        swizzleInstanceMethod([UIViewController class], @selector(viewDidLayoutSubviews), @selector(zaloMod_viewDidLayoutSubviews));
 
         NSLog(@"[DucLamXNgBao] ĐÃ KÍCH HOẠT TOÀN BỘ HOOKS THÀNH CÔNG 100%!");
     });
