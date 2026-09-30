@@ -1,0 +1,49 @@
+name: Build ARM64 Dylib
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-arm64-dylib:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Compile ZaloModVIP.dylib
+        run: |
+          set -e
+          SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "Using iOS SDK at: $SDKPATH"
+
+          xcrun -sdk iphoneos clang \
+            -dynamiclib \
+            -arch arm64 \
+            -isysroot "$SDKPATH" \
+            -miphoneos-version-min=14.0 \
+            -fobjc-arc \
+            -O2 \
+            -framework UIKit \
+            -framework Foundation \
+            -framework CoreGraphics \
+            -framework QuartzCore \
+            ios_tweak/ZaloFloatingButton.m \
+            ios_tweak/ZaloModViewController.m \
+            ios_tweak/ZaloModHooks.m \
+            -install_name @rpath/ZaloModVIP.dylib \
+            -o ZaloModVIP.dylib
+
+          codesign -f -s - ZaloModVIP.dylib
+          echo "=== Compilation Success ==="
+          file ZaloModVIP.dylib
+          otool -L ZaloModVIP.dylib
+
+      - name: Upload Dylib Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZaloModVIP_dylib
+          path: ZaloModVIP.dylib
+          retention-days: 7
