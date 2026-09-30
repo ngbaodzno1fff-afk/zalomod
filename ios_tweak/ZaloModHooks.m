@@ -313,14 +313,13 @@ static void hook_recallHandler(id self, SEL _cmd, id arg1, id arg2) {
     UIView *container = [parent viewWithTag:888999];
     if (isCenteredProfile) {
         // --- CHẾ ĐỘ 1: TRANG CÁ NHÂN (FULL PROFILE) ---
-        // Hiển thị ngay dưới tên: [Business] • Truyền thông & Giải trí (căn giữa)
+        // Chỉ hiện duy nhất nhãn [Business] nằm ngay dưới tên (căn giữa)
         if (!container) {
             container = [[UIView alloc] init];
             container.tag = 888999;
             container.backgroundColor = [UIColor clearColor];
 
-            // 1. Cục pill [Business]
-            UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 56, 19)];
+            UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 58, 20)];
             pill.tag = 101;
             pill.text = @"Business";
             pill.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightMedium];
@@ -331,25 +330,14 @@ static void hook_recallHandler(id self, SEL _cmd, id arg1, id arg2) {
             pill.clipsToBounds = YES;
             [container addSubview:pill];
 
-            // 2. Chữ phụ: • Truyền thông & Giải trí
-            UILabel *subText = [[UILabel alloc] init];
-            subText.tag = 102;
-            subText.text = @" •  Truyền thông & Giải trí";
-            subText.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
-            subText.textColor = [UIColor colorWithRed:0.65 green:0.65 blue:0.68 alpha:1.0];
-            [container addSubview:subText];
-
             [parent addSubview:container];
         }
 
-        UILabel *subText = (UILabel *)[container viewWithTag:102];
-        CGSize subSize = [subText.text sizeWithAttributes:@{NSFontAttributeName: subText.font}];
-        subText.frame = CGRectMake(60, 0, subSize.width, 19);
-
-        CGFloat totalW = 60 + subSize.width;
-        CGFloat containerX = (parent.bounds.size.width - totalW) / 2.0;
-        CGFloat containerY = nameLabel.frame.origin.y + nameLabel.frame.size.height + 4.0;
-        container.frame = CGRectMake(containerX, containerY, totalW, 19);
+        CGFloat badgeW = 58.0;
+        CGFloat badgeH = 20.0;
+        CGFloat containerX = (parent.bounds.size.width - badgeW) / 2.0;
+        CGFloat containerY = nameLabel.frame.origin.y + nameLabel.frame.size.height + 5.0;
+        container.frame = CGRectMake(containerX, containerY, badgeW, badgeH);
         container.hidden = ![ZaloModViewController isBugZBusinessEnabled];
 
     } else {
