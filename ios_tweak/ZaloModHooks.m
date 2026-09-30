@@ -8,7 +8,11 @@
 #import <objc/runtime.h>
 #import "ZaloFloatingButton.h"
 #import "ZaloModViewController.h"
+#import "ZaloModFontHelper.h"
 
+// =========================================================================
+// 1. FLOATING WINDOW (CỤC MENU TRÒN CHẠM XUYÊN THẤU)
+// =========================================================================
 @interface ZaloFloatingWindow : UIWindow
 @end
 
@@ -119,81 +123,190 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
 @end
 
 // =========================================================================
-// RUNTIME METHOD HOOKING (Anti-Undo, Bug Original, Bug ZBusiness, TTL)
+// 2. HELPER SWIZZLING
 // =========================================================================
+static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
+    if (!cls) return;
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method swizMethod = class_getInstanceMethod(cls, swizSel);
+    if (origMethod && swizMethod) {
+        if (class_addMethod(cls, origSel, method_getImplementation(swizMethod), method_getTypeEncoding(swizMethod))) {
+            class_replaceMethod(cls, swizSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+        } else {
+            method_exchangeImplementations(origMethod, swizMethod);
+        }
+    }
+}
 
-// Hook 1: Anti-Undo với định dạng chuẩn yêu cầu:
-// Text: "<text> ( đã thu hồi )" | Ảnh: "( đã thu hồi )\n[Ảnh HD]"
-static void (*orig_deleteMessage)(id self, SEL _cmd, id msg, BOOL onlyMe);
-static void hook_deleteMessage(id self, SEL _cmd, id msg, BOOL onlyMe) {
-    if ([ZaloModViewController isAntiUndoEnabled]) {
-        NSLog(@"[DucLamXNgBao Anti-Undo] Chặn xóa tin nhắn, giữ lại nội dung gốc!");
-        
-        // Cập nhật text theo đúng format
-        if ([msg respondsToSelector:@selector(messageText)]) {
-            NSString *curText = [msg performSelector:@selector(messageText)];
-            if (curText && ![curText containsString:@"( đã thu hồi )"]) {
-                NSString *newText = [NSString stringWithFormat:@"%@ ( đã thu hồi )", curText];
-                if ([msg respondsToSelector:@selector(setMessageText:)]) {
-                    [msg performSelector:@selector(setMessageText:) withObject:newText];
+static void swizzleClassMethod(Class cls, SEL origSel, SEL swizSel) {
+    if (!cls) return;
+    Method origMethod = class_getClassMethod(cls, origSel);
+    Method swizMethod = class_getClassMethod(cls, swizSel);
+    if (origMethod && swizMethod) {
+        method_exchangeImplementations(origMethod, swizMethod);
+    }
+}
+
+// =========================================================================
+// 3. FONT HOOK (12 FONT CHỮ NGHỆ THUẬT KHI NHẬP VÀ GỬI TIN NHẮN)
+// =========================================================================
+@interface UITextView (ZaloModFontHook)
+@end
+
+@implementation UITextView (ZaloModFontHook)
+- (void)zaloMod_insertText:(NSString *)text {
+    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
+        NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+        [self zaloMod_insertText:converted];
+    } else {
+        [self zaloMod_insertText:text];
+    }
+}
+@end
+
+@interface UITextField (ZaloModFontHook)
+@end
+
+@implementation UITextField (ZaloModFontHook)
+- (void)zaloMod_insertText:(NSString *)text {
+    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
+        NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+        [self zaloMod_insertText:converted];
+    } else {
+        [self zaloMod_insertText:text];
+    }
+}
+@end
+
+// =========================================================================
+// 4. BUG API is_original = 1 (ẢNH GỐC HD) & TỰ ĐỘNG GÁN TTL KHI GỬI TIN
+// =========================================================================
+@interface NSJSONSerialization (ZaloModHook)
+@end
+
+@implementation NSJSONSerialization (ZaloModHook)
++ (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        NSMutableDictionary *dict = [obj mutableCopy];
+        BOOL modified = NO;
+
+        // Bug 1: Ép is_original = 1 khi gửi ảnh
+        if ([ZaloModViewController isBugOriginalEnabled]) {
+            if (dict[@"thumb"] || dict[@"photo"] || dict[@"photo_url"] || dict[@"total_size"] || dict[@"width"] || dict[@"height"] || dict[@"media"]) {
+                dict[@"is_original"] = @(1);
+                if ([dict[@"media"] isKindOfClass:[NSDictionary class]]) {
+                    NSMutableDictionary *media = [dict[@"media"] mutableCopy];
+                    media[@"is_original"] = @(1);
+                    dict[@"media"] = media;
                 }
-            }
-        } else if ([msg respondsToSelector:@selector(isPhotoMessage)] && [[msg performSelector:@selector(isPhotoMessage)] boolValue]) {
-            // Tin nhắn ảnh: hiện "( đã thu hồi )\n[Ảnh HD]"
-            if ([msg respondsToSelector:@selector(setCaption:)]) {
-                [msg performSelector:@selector(setCaption:) withObject:@"( đã thu hồi )\n[Ảnh HD]"];
+                modified = YES;
+                NSLog(@"[DucLamXNgBao] Đã ép is_original = 1 cho gói tin ảnh gửi đi!");
             }
         }
 
+        // Bug 2: Tự động gán Custom TTL vào mọi tin nhắn gửi đi
+        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        if (ttlSecs > 0) {
+            if (dict[@"text"] || dict[@"msg"] || dict[@"cmsg"] || dict[@"cmsg_id"] || dict[@"content"] || dict[@"quote"]) {
+                dict[@"ttl"] = @(ttlSecs * 1000);
+                dict[@"ttl_ms"] = @(ttlSecs * 1000);
+                modified = YES;
+                NSLog(@"[DucLamXNgBao] Đã tự động gắn TTL = %ld giây cho tin nhắn!", (long)ttlSecs);
+            }
+        }
+
+        if (modified) {
+            return [self zaloMod_dataWithJSONObject:dict options:opt error:error];
+        }
+    }
+    return [self zaloMod_dataWithJSONObject:obj options:opt error:error];
+}
+@end
+
+// =========================================================================
+// 5. ANTI-UNDO (CHỐNG THU HỒI TIN NHẮN TỪ SERVER)
+// =========================================================================
+static NSMutableSet *gRevokedMessageIds = nil;
+
+static void hook_recallHandler(id self, SEL _cmd, id arg1, id arg2) {
+    if ([ZaloModViewController isAntiUndoEnabled]) {
+        NSLog(@"[DucLamXNgBao Anti-Undo] Đã chặn lệnh thu hồi tin nhắn từ đối phương!");
         dispatch_async(dispatch_get_main_queue(), ^{
             [[ZaloFloatingButton sharedInstance] incrementBadge];
         });
-        return; // Không cho xóa khỏi database hay UI!
-    }
-    if (orig_deleteMessage) {
-        orig_deleteMessage(self, _cmd, msg, onlyMe);
+        return; // Triệt tiêu lệnh thu hồi, tin nhắn vẫn còn nguyên vẹn trên màn hình!
     }
 }
 
-// Hook 2: Bug API is_original = 1 (Gửi ảnh gốc RAW HD)
-static BOOL (*orig_isOriginalPhoto)(id self, SEL _cmd);
-static BOOL hook_isOriginalPhoto(id self, SEL _cmd) {
-    if ([ZaloModViewController isBugOriginalEnabled]) {
-        return YES; // Bắt buộc is_original = 1
-    }
-    return orig_isOriginalPhoto ? orig_isOriginalPhoto(self, _cmd) : YES;
-}
+// Hook vào UILabel để hiển thị nhãn "( đã thu hồi )" cho tin nhắn bị thu hồi
+@interface UILabel (ZaloModAntiUndo)
+@end
 
-// Hook 3: Bug ZBusiness Pro & ZLStyle (Client-Side Spoofing)
-static BOOL (*orig_isBusinessAccount)(id self, SEL _cmd);
-static BOOL hook_isBusinessAccount(id self, SEL _cmd) {
-    if ([ZaloModViewController isBugZBusinessEnabled]) {
-        return YES; // Hiện nhãn Doanh Nghiệp ZBusiness Pro
+@implementation UILabel (ZaloModAntiUndo)
+- (void)zaloMod_setText:(NSString *)text {
+    if ([ZaloModViewController isAntiUndoEnabled] && text && text.length > 0) {
+        if ([text containsString:@"Tin nhắn đã được thu hồi"] || [text containsString:@"Message recalled"] || [text containsString:@"đã thu hồi một tin nhắn"]) {
+            text = [NSString stringWithFormat:@"%@ ( đã thu hồi )", text];
+        }
     }
-    return orig_isBusinessAccount ? orig_isBusinessAccount(self, _cmd) : NO;
+    [self zaloMod_setText:text];
 }
-
-static id (*orig_businessPackageName)(id self, SEL _cmd);
-static id hook_businessPackageName(id self, SEL _cmd) {
-    if ([ZaloModViewController isBugZBusinessEnabled]) {
-        return @"ZBusiness Pro (Xác Thực Doanh Nghiệp)";
-    }
-    return orig_businessPackageName ? orig_businessPackageName(self, _cmd) : nil;
-}
-
-// Hook 4: Tự động gán Custom TTL vào mọi tin nhắn gửi đi
-static NSInteger (*orig_messageTTL)(id self, SEL _cmd);
-static NSInteger hook_messageTTL(id self, SEL _cmd) {
-    NSInteger customTTL = [ZaloModViewController customTTLSeconds];
-    if (customTTL > 0) {
-        return customTTL; // Tự động có TTL
-    }
-    return orig_messageTTL ? orig_messageTTL(self, _cmd) : 0;
-}
+@end
 
 // =========================================================================
-// SIRIKIT ENTITLEMENT BYPASS (Chống văng app 100% khi Sideload qua ESign/Scarlet)
-// Lỗi gốc: "Use of the class [INPreferences] requires com.apple.developer.siri"
+// 6. BUG ZLSTYLE & NHÃN DOANH NGHIỆP ZBUSINESS PRO (CLIENT-SIDE)
+// =========================================================================
+@interface UIViewController (ZaloModProfileSpoof)
+@end
+
+@implementation UIViewController (ZaloModProfileSpoof)
+- (void)zaloMod_viewDidAppear:(BOOL)animated {
+    [self zaloMod_viewDidAppear:animated];
+
+    if (![ZaloModViewController isBugZBusinessEnabled]) return;
+
+    NSString *className = NSStringFromClass([self class]);
+    if ([className containsString:@"Profile"] || [className containsString:@"UserDetail"] || [className containsString:@"Account"]) {
+        [self injectZBusinessBadgeAndFrame];
+    }
+}
+
+- (void)injectZBusinessBadgeAndFrame {
+    // 1. Tìm hoặc gắn nhãn ZBusiness Pro vàng
+    UIView *existingBadge = [self.view viewWithTag:888999];
+    if (!existingBadge) {
+        UILabel *badge = [[UILabel alloc] initWithFrame:CGRectMake(20, 110, 160, 24)];
+        badge.tag = 888999;
+        badge.text = @"👑 ZBusiness Pro";
+        badge.font = [UIFont boldSystemFontOfSize:11.5];
+        badge.textColor = [UIColor blackColor];
+        badge.backgroundColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.95];
+        badge.textAlignment = NSTextAlignmentCenter;
+        badge.layer.cornerRadius = 12.0;
+        badge.layer.borderColor = [UIColor whiteColor].CGColor;
+        badge.layer.borderWidth = 1.0;
+        badge.clipsToBounds = YES;
+        [self.view addSubview:badge];
+    }
+
+    // 2. Viền phát sáng hoàng gia ZLStyle quanh avatar
+    for (UIView *sub in self.view.subviews) {
+        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 60 && sub.bounds.size.width <= 140) {
+            sub.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.9].CGColor;
+            sub.layer.borderWidth = 3.0;
+            sub.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.8 blue:0.0 alpha:1.0].CGColor;
+            sub.layer.shadowRadius = 10.0;
+            sub.layer.shadowOpacity = 0.9;
+            break;
+        }
+    }
+}
+@end
+
+// =========================================================================
+// 7. SIRIKIT ENTITLEMENT BYPASS (Chống văng app khi Sideload qua ESign/Scarlet)
 // =========================================================================
 @interface FakeIntentsBypass : NSObject
 + (id)sharedPreferences;
@@ -210,42 +323,89 @@ static NSInteger hook_messageTTL(id self, SEL _cmd) {
 }
 @end
 
-static void swizzleClassMethod(Class origClass, SEL origSel, Class fakeClass, SEL fakeSel) {
-    if (!origClass || !fakeClass) return;
-    Method origMethod = class_getClassMethod(origClass, origSel);
-    Method fakeMethod = class_getClassMethod(fakeClass, fakeSel);
-    if (origMethod && fakeMethod) {
-        method_exchangeImplementations(origMethod, fakeMethod);
-        NSLog(@"[DucLamXNgBao Hook] Successfully swizzled %@ to bypass entitlement check!", NSStringFromSelector(origSel));
-    }
-}
-
 static void patchSiriKitCrash(void) {
     @try {
         Class prefClass = objc_getClass("INPreferences");
         if (prefClass) {
-            swizzleClassMethod(prefClass, @selector(sharedPreferences), [FakeIntentsBypass class], @selector(sharedPreferences));
-            swizzleClassMethod(prefClass, @selector(siriLanguageCode), [FakeIntentsBypass class], @selector(siriLanguageCode));
-            swizzleClassMethod(prefClass, @selector(requestSiriAuthorization:), [FakeIntentsBypass class], @selector(requestSiriAuthorization:));
+            Method m1 = class_getClassMethod(prefClass, @selector(sharedPreferences));
+            Method m2 = class_getClassMethod([FakeIntentsBypass class], @selector(sharedPreferences));
+            if (m1 && m2) method_exchangeImplementations(m1, m2);
+
+            Method m3 = class_getClassMethod(prefClass, @selector(siriLanguageCode));
+            Method m4 = class_getClassMethod([FakeIntentsBypass class], @selector(siriLanguageCode));
+            if (m3 && m4) method_exchangeImplementations(m3, m4);
         }
 
         Class vocabClass = objc_getClass("INVocabulary");
         if (vocabClass) {
-            swizzleClassMethod(vocabClass, @selector(sharedVocabulary), [FakeIntentsBypass class], @selector(sharedVocabulary));
+            Method v1 = class_getClassMethod(vocabClass, @selector(sharedVocabulary));
+            Method v2 = class_getClassMethod([FakeIntentsBypass class], @selector(sharedVocabulary));
+            if (v1 && v2) method_exchangeImplementations(v1, v2);
         }
-        NSLog(@"[DucLamXNgBao Hook] Đã vá lỗi com.apple.developer.siri (Chống văng app hoàn toàn)!");
     } @catch (NSException *e) {
-        NSLog(@"[DucLamXNgBao Hook] Siri bypass error: %@", e);
+        NSLog(@"[DucLamXNgBao] Siri bypass error: %@", e);
     }
+}
+
+// =========================================================================
+// 8. TỔNG HỢP VÀ KÍCH HOẠT TẤT CẢ CÁC HOOK
+// =========================================================================
+static void installAllZaloModHooks(void) {
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSLog(@"[DucLamXNgBao] Đang cài đặt toàn bộ Hook cho Zalo Mod VIP...");
+
+        // 1. Hook Font Chữ vào UITextView và UITextField
+        swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
+        swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
+
+        // 2. Hook is_original = 1 và Custom TTL vào NSJSONSerialization
+        Method origJSON = class_getClassMethod([NSJSONSerialization class], @selector(dataWithJSONObject:options:error:));
+        Method swizJSON = class_getClassMethod([NSJSONSerialization class], @selector(zaloMod_dataWithJSONObject:options:error:));
+        if (origJSON && swizJSON) {
+            method_exchangeImplementations(origJSON, swizJSON);
+            NSLog(@"[DucLamXNgBao Hook] Đã móc nối thành công is_original=1 & Custom TTL!");
+        }
+
+        // 3. Hook Anti-Undo vào UILabel setText:
+        swizzleInstanceMethod([UILabel class], @selector(setText:), @selector(zaloMod_setText:));
+
+        // 4. Hook Anti-Undo vào các class xử lý recall tin nhắn của Zalo
+        int numClasses = objc_getClassList(NULL, 0);
+        if (numClasses > 0) {
+            Class *classes = (Class *)malloc(sizeof(Class) * numClasses);
+            numClasses = objc_getClassList(classes, numClasses);
+            SEL recallSel1 = sel_registerName("ms_dataCoordinator:didReceiveRecallRequest:");
+            SEL recallSel2 = sel_registerName("didReceiveRecallRequest:");
+            for (int i = 0; i < numClasses; i++) {
+                Class c = classes[i];
+                if (class_getInstanceMethod(c, recallSel1)) {
+                    class_replaceMethod(c, recallSel1, (IMP)hook_recallHandler, "v@:@@");
+                    NSLog(@"[DucLamXNgBao Hook] Đã chặn recall thành công trên class: %s", class_getName(c));
+                }
+                if (class_getInstanceMethod(c, recallSel2)) {
+                    class_replaceMethod(c, recallSel2, (IMP)hook_recallHandler, "v@:@");
+                    NSLog(@"[DucLamXNgBao Hook] Đã chặn recall thành công trên class: %s", class_getName(c));
+                }
+            }
+            free(classes);
+        }
+
+        // 5. Hook Profile hiển thị ZBusiness Pro & ZLStyle
+        swizzleInstanceMethod([UIViewController class], @selector(viewDidAppear:), @selector(zaloMod_viewDidAppear:));
+
+        NSLog(@"[DucLamXNgBao] ĐÃ KÍCH HOẠT TOÀN BỘ HOOKS THÀNH CÔNG 100%!");
+    });
 }
 
 // Constructor Tweak
 __attribute__((constructor))
 static void initZaloModVIP(void) {
-    // 1. Vá lỗi SiriKit ngay lập tức trước khi Zalo khởi tạo để chống văng app
     patchSiriKitCrash();
+    gRevokedMessageIds = [[NSMutableSet alloc] init];
 
-    NSLog(@"[DucLamXNgBao] Initializing Zalo VIP Mod Menu (iOS 26 Liquid Glass)...");
+    // Cài đặt tất cả runtime hooks ngay khi nạp dylib
+    installAllZaloModHooks();
 
     void (^setupBlock)(NSNotification *) = ^(NSNotification * _Nonnull note) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -278,4 +438,3 @@ static void initZaloModVIP(void) {
         [[ZaloModManager sharedManager] setupFloatingButton];
     });
 }
-
