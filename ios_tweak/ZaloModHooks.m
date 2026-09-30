@@ -307,41 +307,100 @@ static void hook_recallHandler(id self, SEL _cmd, id arg1, id arg2) {
     if (!nameLabel || !nameLabel.superview) return;
 
     UIView *parent = nameLabel.superview;
+    CGFloat screenW = [UIScreen mainScreen].bounds.size.width;
+    BOOL isCenteredProfile = fabs(nameLabel.center.x - screenW / 2.0) < 60.0 || [className containsString:@"Profile"] || [className containsString:@"UserDetail"];
 
-    // 1. Tạo nhãn "Business" chuẩn y chang thật (Nền xanh đen, chữ xanh dương nhạt)
-    UILabel *badge = (UILabel *)[parent viewWithTag:888999];
-    if (!badge) {
-        badge = [[UILabel alloc] init];
-        badge.tag = 888999;
-        badge.text = @"Business";
-        badge.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightMedium];
-        badge.textColor = [UIColor colorWithRed:0.29 green:0.64 blue:0.89 alpha:1.0]; // Xanh nhạt #4ba3e3
-        badge.backgroundColor = [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95]; // Xanh đậm #0e334a
-        badge.textAlignment = NSTextAlignmentCenter;
-        badge.layer.cornerRadius = 4.0;
-        badge.clipsToBounds = YES;
-        [parent addSubview:badge];
+    UIView *container = [parent viewWithTag:888999];
+    if (isCenteredProfile) {
+        // --- CHẾ ĐỘ 1: TRANG CÁ NHÂN (FULL PROFILE) ---
+        // Hiển thị ngay dưới tên: [Business] • Truyền thông & Giải trí (căn giữa)
+        if (!container) {
+            container = [[UIView alloc] init];
+            container.tag = 888999;
+            container.backgroundColor = [UIColor clearColor];
+
+            // 1. Cục pill [Business]
+            UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 56, 19)];
+            pill.tag = 101;
+            pill.text = @"Business";
+            pill.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightMedium];
+            pill.textColor = [UIColor colorWithRed:0.29 green:0.64 blue:0.89 alpha:1.0]; // #4ba3e3
+            pill.backgroundColor = [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95]; // #0e334a
+            pill.textAlignment = NSTextAlignmentCenter;
+            pill.layer.cornerRadius = 4.0;
+            pill.clipsToBounds = YES;
+            [container addSubview:pill];
+
+            // 2. Chữ phụ: • Truyền thông & Giải trí
+            UILabel *subText = [[UILabel alloc] init];
+            subText.tag = 102;
+            subText.text = @" •  Truyền thông & Giải trí";
+            subText.font = [UIFont systemFontOfSize:12.0 weight:UIFontWeightRegular];
+            subText.textColor = [UIColor colorWithRed:0.65 green:0.65 blue:0.68 alpha:1.0];
+            [container addSubview:subText];
+
+            [parent addSubview:container];
+        }
+
+        UILabel *subText = (UILabel *)[container viewWithTag:102];
+        CGSize subSize = [subText.text sizeWithAttributes:@{NSFontAttributeName: subText.font}];
+        subText.frame = CGRectMake(60, 0, subSize.width, 19);
+
+        CGFloat totalW = 60 + subSize.width;
+        CGFloat containerX = (parent.bounds.size.width - totalW) / 2.0;
+        CGFloat containerY = nameLabel.frame.origin.y + nameLabel.frame.size.height + 4.0;
+        container.frame = CGRectMake(containerX, containerY, totalW, 19);
+        container.hidden = ![ZaloModViewController isBugZBusinessEnabled];
+
+    } else {
+        // --- CHẾ ĐỘ 2: THANH HEADER CHAT (INLINE) ---
+        // Nằm ngay cạnh bên phải tên tài khoản
+        if (!container) {
+            container = [[UIView alloc] init];
+            container.tag = 888999;
+            container.backgroundColor = [UIColor clearColor];
+
+            UILabel *pill = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 56, 19)];
+            pill.tag = 101;
+            pill.text = @"Business";
+            pill.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightMedium];
+            pill.textColor = [UIColor colorWithRed:0.29 green:0.64 blue:0.89 alpha:1.0];
+            pill.backgroundColor = [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95];
+            pill.textAlignment = NSTextAlignmentCenter;
+            pill.layer.cornerRadius = 4.0;
+            pill.clipsToBounds = YES;
+            [container addSubview:pill];
+
+            [parent addSubview:container];
+        }
+
+        CGSize nameSize = [nameLabel.text sizeWithAttributes:@{NSFontAttributeName: nameLabel.font ?: [UIFont systemFontOfSize:17.0]}];
+        CGFloat actualW = MIN(nameLabel.bounds.size.width, nameSize.width);
+        CGFloat badgeX = nameLabel.frame.origin.x + actualW + 7.0;
+        CGFloat badgeY = nameLabel.frame.origin.y + (nameLabel.frame.size.height - 19.0) / 2.0;
+        container.frame = CGRectMake(badgeX, badgeY, 56, 19);
+        container.hidden = ![ZaloModViewController isBugZBusinessEnabled];
     }
 
-    CGSize nameSize = [nameLabel.text sizeWithAttributes:@{NSFontAttributeName: nameLabel.font ?: [UIFont systemFontOfSize:17.0]}];
-    CGFloat actualW = MIN(nameLabel.bounds.size.width, nameSize.width);
-
-    CGFloat badgeW = 58.0;
-    CGFloat badgeH = 20.0;
-    CGFloat badgeX = nameLabel.frame.origin.x + actualW + 7.0;
-    CGFloat badgeY = nameLabel.frame.origin.y + (nameLabel.frame.size.height - badgeH) / 2.0;
-
-    badge.frame = CGRectMake(badgeX, badgeY, badgeW, badgeH);
-    badge.hidden = ![ZaloModViewController isBugZBusinessEnabled];
-
-    // 2. Viền phát sáng hoàng gia ZLStyle quanh avatar
+    // 3. Khung & Sticker zStyle trên Avatar tròn (Hình Người Tuyết ⛄ / Vương Miện)
     for (UIView *sub in parent.subviews) {
-        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 40 && sub.bounds.size.width <= 140) {
-            sub.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.9].CGColor;
+        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 50 && sub.bounds.size.width <= 140) {
+            // Viền phát sáng ánh kim
+            sub.layer.borderColor = [UIColor colorWithRed:0.3 green:0.75 blue:1.0 alpha:0.8].CGColor;
             sub.layer.borderWidth = 2.5;
-            sub.layer.shadowColor = [UIColor colorWithRed:1.0 green:0.8 blue:0.0 alpha:1.0].CGColor;
-            sub.layer.shadowRadius = 8.0;
-            sub.layer.shadowOpacity = 0.85;
+
+            // Sticker zStyle góc trên bên trái của Avatar
+            UILabel *sticker = (UILabel *)[parent viewWithTag:777666];
+            if (!sticker) {
+                sticker = [[UILabel alloc] init];
+                sticker.tag = 777666;
+                sticker.text = @"⛄"; // Người tuyết zStyle y chang ảnh
+                sticker.font = [UIFont systemFontOfSize:26.0];
+                sticker.textAlignment = NSTextAlignmentCenter;
+                [parent addSubview:sticker];
+            }
+            sticker.frame = CGRectMake(sub.frame.origin.x - 6, sub.frame.origin.y - 6, 34, 34);
+            sticker.hidden = ![ZaloModViewController isBugZBusinessEnabled];
             break;
         }
     }
