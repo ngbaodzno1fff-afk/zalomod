@@ -60,13 +60,21 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
             }
 
             if (!gFloatingWindow) {
-                if (scene && @available(iOS 13.0, *)) {
-                    gFloatingWindow = [[ZaloFloatingWindow alloc] initWithWindowScene:scene];
+                if (@available(iOS 13.0, *)) {
+                    if (scene) {
+                        gFloatingWindow = [[ZaloFloatingWindow alloc] initWithWindowScene:scene];
+                    } else {
+                        gFloatingWindow = [[ZaloFloatingWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+                    }
                 } else {
                     gFloatingWindow = [[ZaloFloatingWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
                 }
-            } else if (scene && @available(iOS 13.0, *)) {
-                gFloatingWindow.windowScene = scene;
+            } else {
+                if (@available(iOS 13.0, *)) {
+                    if (scene) {
+                        gFloatingWindow.windowScene = scene;
+                    }
+                }
             }
 
             gFloatingWindow.windowLevel = UIWindowLevelAlert + 1000.0;
