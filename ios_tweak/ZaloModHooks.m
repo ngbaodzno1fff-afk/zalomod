@@ -12,22 +12,18 @@
 #import "ZaloModFontHelper.h"
 
 // =========================================================================
-// 1. FLOATING WINDOW (CỤC MENU TRÒN CHẠM XUYÊN THẤU - AN TOÀN TRÊN MỌI PHIÊN BẢN IOS)
+// 1. FLOATING BUTTON & WINDOW (CỤC MENU TRÒN CHẠM XUYÊN THẤU - AN TOÀN TUYỆT ĐỐI)
 // =========================================================================
 @interface ZaloFloatingWindow : UIWindow
 @end
 
 @implementation ZaloFloatingWindow
-- (BOOL)canBecomeKeyWindow {
-    return NO; // Tuyệt đối không chiếm quyền Key Window của Zalo
-}
-
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
     if (hitView == self || hitView == self.rootViewController.view) {
         return nil; // Cho phép chạm xuyên thấu xuống Zalo!
     }
-    return hitView;
+    return hitView; // Nút tròn nhận sự kiện cảm ứng bình thường!
 }
 @end
 
@@ -52,22 +48,48 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
 - (void)setupFloatingButton {
     dispatch_async(dispatch_get_main_queue(), ^{
         @try {
-            if (gFloatingWindow && !gFloatingWindow.hidden && [ZaloFloatingButton sharedInstance].superview) {
+            ZaloFloatingButton *bubble = [ZaloFloatingButton sharedInstance];
+            bubble.delegate = self;
+
+            // Cách 1: Thử gắn trực tiếp vào Top Window của Zalo để 100% bấm được mượt mà
+            UIWindow *topWindow = nil;
+            if (@available(iOS 13.0, *)) {
+                for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                    if ([scene isKindOfClass:[UIWindowScene class]]) {
+                        UIWindowScene *ws = (UIWindowScene *)scene;
+                        for (UIWindow *w in ws.windows) {
+                            if (!w.hidden && w.isKeyWindow) {
+                                topWindow = w;
+                                break;
+                            }
+                        }
+                        if (topWindow) break;
+                    }
+                }
+            }
+            if (!topWindow) {
+                topWindow = [UIApplication sharedApplication].keyWindow;
+            }
+
+            if (topWindow && topWindow.rootViewController && topWindow.rootViewController.view) {
+                UIView *targetView = topWindow.rootViewController.view;
+                if (bubble.superview != targetView) {
+                    [bubble removeFromSuperview];
+                    [targetView addSubview:bubble];
+                    [targetView bringSubviewToFront:bubble];
+                }
+                [bubble show];
+                NSLog(@"[DucLamXNgBao] Đã gắn Cục Menu Tròn trực tiếp vào Top Window thành công!");
                 return;
             }
 
+            // Cách 2: Nếu chưa có Top Window, dùng ZaloFloatingWindow độc lập
             UIWindowScene *activeScene = nil;
             if (@available(iOS 13.0, *)) {
                 for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                    if ([scene isKindOfClass:[UIWindowScene class]] && scene.activationState == UISceneActivationStateForegroundActive) {
+                    if ([scene isKindOfClass:[UIWindowScene class]]) {
                         activeScene = (UIWindowScene *)scene;
-                        break;
-                    }
-                }
-                if (!activeScene) {
-                    for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                        if ([scene isKindOfClass:[UIWindowScene class]]) {
-                            activeScene = (UIWindowScene *)scene;
+                        if (scene.activationState == UISceneActivationStateForegroundActive) {
                             break;
                         }
                     }
@@ -79,11 +101,7 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
                     if (activeScene) {
                         gFloatingWindow = [[ZaloFloatingWindow alloc] initWithWindowScene:activeScene];
                     } else {
-                        // Nếu Scene chưa sẵn sàng, chờ 0.5s rồi thử lại an toàn
-                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                            [[ZaloModManager sharedManager] setupFloatingButton];
-                        });
-                        return;
+                        gFloatingWindow = [[ZaloFloatingWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
                     }
                 } else {
                     gFloatingWindow = [[ZaloFloatingWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
@@ -106,14 +124,11 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
 
             gFloatingWindow.hidden = NO;
 
-            ZaloFloatingButton *bubble = [ZaloFloatingButton sharedInstance];
-            bubble.delegate = self;
             if (bubble.superview != gFloatingWindow.rootViewController.view) {
                 [bubble removeFromSuperview];
                 [gFloatingWindow.rootViewController.view addSubview:bubble];
             }
             [bubble show];
-
             NSLog(@"[DucLamXNgBao] Đã khởi tạo Cục Menu Tròn Zalo VIP Mod thành công!");
         } @catch (NSException *exception) {
             NSLog(@"[DucLamXNgBao] Exception initializing floating button: %@", exception);
@@ -123,12 +138,22 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
 
 #pragma mark - ZaloFloatingButtonDelegate
 - (void)floatingButtonDidTap:(id)sender {
-    UIViewController *rootVC = gFloatingWindow.rootViewController;
-    if (!rootVC) return;
+    UIViewController *presentingVC = nil;
+    if (gFloatingWindow && gFloatingWindow.rootViewController) {
+        presentingVC = gFloatingWindow.rootViewController;
+    }
+    if (!presentingVC) {
+        UIWindow *kw = [UIApplication sharedApplication].keyWindow;
+        presentingVC = kw.rootViewController;
+        while (presentingVC.presentedViewController) {
+            presentingVC = presentingVC.presentedViewController;
+        }
+    }
+    if (!presentingVC) return;
 
     ZaloModViewController *menuVC = [ZaloModViewController sharedInstance];
     menuVC.delegate = self;
-    [menuVC showMenuFromViewController:rootVC];
+    [menuVC showMenuFromViewController:presentingVC];
 }
 
 - (void)modMenuDidDismiss {
@@ -153,7 +178,7 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 }
 
 // =========================================================================
-// 3. FONT HOOK (12 FONT CHỮ NGHỆ THUẬT, CHỮ TO, CHỮ MÀU, RANDOM MÀU KHI GỬI)
+// 3. FONT HOOK (12 FONT CHỮ NGHỆ THUẬT, CHỮ TO, CHỮ MÀU KHI GÕ & KHI GỬI)
 // =========================================================================
 @interface UITextView (ZaloModFontHook)
 @end
@@ -186,24 +211,59 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 @end
 
 // =========================================================================
-// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - CHUẨN XÁC, GIỮ NGUYÊN NỘI DUNG GỐC
+// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - CHẶN XÓA & HIỂN THỊ NỘI DUNG GỐC
 // =========================================================================
+static void hook_UndoChatProcessor_updateUndoMessageContent(id self, SEL _cmd, id chat) {
+    if ([ZaloModViewController isAntiUndoEnabled] && chat) {
+        @try {
+            SEL origRecallSel = sel_registerName("_originTextRecallMsg");
+            SEL msgSel = sel_registerName("message");
+            SEL setMsgSel = sel_registerName("setMessage:");
+
+            NSString *origText = nil;
+            if ([chat respondsToSelector:origRecallSel]) {
+                origText = ((id (*)(id, SEL))objc_msgSend)(chat, origRecallSel);
+            }
+            if (!origText || origText.length == 0) {
+                if ([chat respondsToSelector:msgSel]) {
+                    origText = ((id (*)(id, SEL))objc_msgSend)(chat, msgSel);
+                }
+            }
+            if (!origText || origText.length == 0) {
+                origText = @"[Tin nhắn đã thu hồi]";
+            }
+
+            if (origText && ![origText containsString:@"( đã thu hồi )"]) {
+                NSString *newText = [NSString stringWithFormat:@"%@ ( đã thu hồi )", origText];
+                if ([chat respondsToSelector:setMsgSel]) {
+                    ((void (*)(id, SEL, id))objc_msgSend)(chat, setMsgSel, newText);
+                }
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [[ZaloFloatingButton sharedInstance] incrementBadge];
+            });
+            return; // Chặn không thay thế thành nhãn trắng xóa của Zalo!
+        } @catch (NSException *e) {}
+    }
+
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_updateUndoMessageContent:"));
+    if (orig) orig(self, _cmd, chat);
+}
+
 static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id item) {
     if ([ZaloModViewController isAntiUndoEnabled]) {
         NSLog(@"[DucLamXNgBao Anti-Undo] Đã chặn lệnh thu hồi tin nhắn từ Server!");
         dispatch_async(dispatch_get_main_queue(), ^{
             [[ZaloFloatingButton sharedInstance] incrementBadge];
         });
-        return; // KHÔNG THỰC THI LỆNH XÓA/THU HỒI -> Tin nhắn được giữ nguyên vẹn 100%!
+        return; // KHÔNG THỰC THI LỆNH XÓA/THU HỒI!
     }
     void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUndoMessage:"));
-    if (orig) {
-        orig(self, _cmd, item);
-    }
+    if (orig) orig(self, _cmd, item);
 }
 
 static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id chat) {
-    if ([ZaloModViewController isAntiUndoEnabled]) {
+    if ([ZaloModViewController isAntiUndoEnabled] && chat) {
         @try {
             SEL msgSel = sel_registerName("message");
             SEL setMsgSel = sel_registerName("setMessage:");
@@ -215,12 +275,10 @@ static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id 
                 }
             }
         } @catch (NSException *e) {}
-        return; // Chặn cập nhật trạng thái xóa vào ChatEntity!
+        return; // Chặn cập nhật trạng thái xóa!
     }
     void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUpdateUndo:"));
-    if (orig) {
-        orig(self, _cmd, chat);
-    }
+    if (orig) orig(self, _cmd, chat);
 }
 
 // =========================================================================
@@ -238,6 +296,8 @@ static void markChatAsOriginalIfPhoto(id chat) {
             isPhoto = YES;
         } else if ([chat respondsToSelector:sel_registerName("isPhotoHD")]) {
             isPhoto = YES;
+        } else if ([chat respondsToSelector:sel_registerName("photoHDSize")]) {
+            isPhoto = YES;
         }
         if (isPhoto) {
             if ([chat respondsToSelector:sel_registerName("setIsOriginal:")]) {
@@ -248,6 +308,9 @@ static void markChatAsOriginalIfPhoto(id chat) {
             }
             if ([chat respondsToSelector:sel_registerName("set_isOrigin:")]) {
                 ((void (*)(id, SEL, BOOL))objc_msgSend)(chat, sel_registerName("set_isOrigin:"), YES);
+            }
+            if ([chat respondsToSelector:sel_registerName("setCanSendOriginal:")]) {
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(chat, sel_registerName("setCanSendOriginal:"), YES);
             }
         }
     } @catch (NSException *e) {}
@@ -270,7 +333,7 @@ static NSInteger hook_currentQuality_original(id self, SEL _cmd) {
 }
 
 static float hook_originalCompressQuality(id self, SEL _cmd) {
-    return 1.0f; // 100% chất lượng ảnh gốc
+    return 1.0f;
 }
 
 static BOOL hook_allowRememberQuality(id self, SEL _cmd) {
@@ -278,7 +341,7 @@ static BOOL hook_allowRememberQuality(id self, SEL _cmd) {
 }
 
 static long long hook_maxOriginalLimit(id self, SEL _cmd) {
-    return 100LL * 1024LL * 1024LL; // 100 MB
+    return 100LL * 1024LL * 1024LL;
 }
 
 static BOOL hook_RichMessageContent_isOriginal(id self, SEL _cmd) {
@@ -294,77 +357,76 @@ static BOOL hook_RichMessageContent_isPhotoHD(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 6. HELPER KIỂM TRA TIN NHẮN DO MÌNH GỬI ĐI & GÁN TTL THEO GIÂY CHUẨN XÁC
+// 6. ÁP DỤNG FONT CHỮ, TTL VÀ ẢNH ORIGINAL VÀO MỌI TIN NHẮN GỬI ĐI (100% HIỆU LỰC)
 // =========================================================================
-static BOOL isMessageFromMe(id chat) {
-    if (!chat || ![chat isKindOfClass:[NSObject class]]) return NO;
-    @try {
-        if ([chat respondsToSelector:sel_registerName("isMyMessage")]) {
-            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isMyMessage"));
-            return (val != 0);
-        }
-        if ([chat respondsToSelector:sel_registerName("isOutgoing")]) {
-            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isOutgoing"));
-            return (val != 0);
-        }
-        if ([chat respondsToSelector:sel_registerName("isSenderMe")]) {
-            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isSenderMe"));
-            return (val != 0);
-        }
-    } @catch (NSException *e) {}
-    return NO;
-}
-
-static void attachTTLToOutgoingChatIfNeed(id chat) {
+static void applyAllModSettingsToOutgoingChat(id chat) {
     if (!chat) return;
-    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0) {
-        SEL setTtlSel = sel_registerName("setTtl:");
-        if ([chat respondsToSelector:setTtlSel]) {
-            ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, (long long)ttlSecs);
+    @try {
+        // 1. ÁP DỤNG FONT CHỮ (Chữ To, Chữ Đỏ, Khối Đen, Khoanh Tròn, Random,...)
+        NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+        if (selectedFont && ![selectedFont isEqualToString:@"Tắt"]) {
+            SEL msgSel = sel_registerName("message");
+            SEL setMsgSel = sel_registerName("setMessage:");
+            if ([chat respondsToSelector:msgSel] && [chat respondsToSelector:setMsgSel]) {
+                NSString *origMsg = ((id (*)(id, SEL))objc_msgSend)(chat, msgSel);
+                if (origMsg && origMsg.length > 0) {
+                    NSString *styledMsg = [ZaloModFontHelper convertText:origMsg toStyle:selectedFont];
+                    if (styledMsg && styledMsg.length > 0) {
+                        ((void (*)(id, SEL, id))objc_msgSend)(chat, setMsgSel, styledMsg);
+                        NSLog(@"[DucLamXNgBao] Đã đổi font '%@' cho tin nhắn gửi đi: %@", selectedFont, styledMsg);
+                    }
+                }
+            }
         }
+
+        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d)
+        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        if (ttlSecs > 0) {
+            SEL setTtlSel = sel_registerName("setTtl:");
+            if ([chat respondsToSelector:setTtlSel]) {
+                ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, (long long)ttlSecs);
+                NSLog(@"[DucLamXNgBao] Đã gán TTL %ld giây cho tin nhắn gửi đi!", (long)ttlSecs);
+            }
+        }
+
+        // 3. TỰ ĐỘNG GỬI ẢNH GỐC HD (ORIGINAL)
+        markChatAsOriginalIfPhoto(chat);
+    } @catch (NSException *e) {
+        NSLog(@"[DucLamXNgBao] Exception applyAllModSettingsToOutgoingChat: %@", e);
     }
-    markChatAsOriginalIfPhoto(chat);
 }
 
-// Hook ZAChatSendingManager: Gửi tin nhắn tự động kèm TTL và tự động gửi ảnh Original
+// Hook ZAChatSendingManager: Nơi gửi đi tất cả tin nhắn & ảnh của người dùng
 static void hook_sendChat_checkUpload(id self, SEL _cmd, id chat, BOOL check) {
-    if (isMessageFromMe(chat)) {
-        attachTTLToOutgoingChatIfNeed(chat);
-    }
+    applyAllModSettingsToOutgoingChat(chat);
     void (*orig)(id, SEL, id, BOOL) = (void (*)(id, SEL, id, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_checkUpload:"));
     if (orig) orig(self, _cmd, chat, check);
 }
 
 static void hook_sendChat_destinations(id self, SEL _cmd, id chat, id dests, BOOL check, BOOL wait) {
-    if (isMessageFromMe(chat)) {
-        attachTTLToOutgoingChatIfNeed(chat);
-    }
+    applyAllModSettingsToOutgoingChat(chat);
     void (*orig)(id, SEL, id, id, BOOL, BOOL) = (void (*)(id, SEL, id, id, BOOL, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_destinations:"));
     if (orig) orig(self, _cmd, chat, dests, check, wait);
 }
 
-// Hook ChatDataManager: Gán TTL vào tin nhắn của mình
+// Hook ChatDataManager: Nơi chuẩn bị và đồng bộ tin nhắn gửi đi
 static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
+    applyAllModSettingsToOutgoingChat(chat);
     void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
     id result = chat;
     if (orig) {
         result = ((id (*)(id, SEL, id))orig)(self, _cmd, chat);
     }
     if (!result) result = chat;
-
-    if (isMessageFromMe(result) || isMessageFromMe(chat)) {
-        attachTTLToOutgoingChatIfNeed(result);
-        if (chat != result) attachTTLToOutgoingChatIfNeed(chat);
-    }
+    applyAllModSettingsToOutgoingChat(result);
     return result;
 }
 
 static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
     BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"));
     BOOL res = orig ? orig(self, _cmd, chat) : NO;
-    if (isMessageFromMe(chat)) {
-        attachTTLToOutgoingChatIfNeed(chat);
+    applyAllModSettingsToOutgoingChat(chat);
+    if ([ZaloModViewController customTTLSeconds] > 0) {
         res = YES;
     }
     return res;
@@ -417,7 +479,7 @@ static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
 }
 
 // =========================================================================
-// 9. KÍCH HOẠT TOÀN BỘ HOOKS (SIÊU ỔN ĐỊNH, KHÔNG CRASH)
+// 9. KÍCH HOẠT TOÀN BỘ HOOKS (CHẠY ỔN ĐỊNH 100%, ĐẦY ĐỦ TÁC DỤNG)
 // =========================================================================
 static void installAllZaloModHooks(void) {
     static dispatch_once_t onceToken;
@@ -428,7 +490,19 @@ static void installAllZaloModHooks(void) {
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
 
-        // 2. Hook Anti-Undo trên ChatOperationProcessor (Chặn lệnh xóa từ Server, giữ nguyên tin nhắn thật)
+        // 2. Hook Anti-Undo trên UndoChatProcessor & ChatOperationProcessor
+        Class undoProcCls = objc_getClass("UndoChatProcessor");
+        if (undoProcCls) {
+            Class metaCls = object_getClass(undoProcCls);
+            Method mUndo = class_getClassMethod(undoProcCls, sel_registerName("updateUndoMessageContent:"));
+            if (mUndo && metaCls) {
+                IMP origImp = method_getImplementation(mUndo);
+                class_addMethod(metaCls, sel_registerName("zaloMod_orig_updateUndoMessageContent:"), origImp, method_getTypeEncoding(mUndo));
+                method_setImplementation(mUndo, (IMP)hook_UndoChatProcessor_updateUndoMessageContent);
+                NSLog(@"[DucLamXNgBao] Hook UndoChatProcessor updateUndoMessageContent thành công!");
+            }
+        }
+
         Class chatOpProcCls = objc_getClass("ChatOperationProcessor");
         if (chatOpProcCls) {
             Method undoProcM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUndoMessageWithOperationItem:"));
@@ -436,7 +510,6 @@ static void installAllZaloModHooks(void) {
                 IMP origImp = method_getImplementation(undoProcM);
                 class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUndoMessage:"), origImp, method_getTypeEncoding(undoProcM));
                 method_setImplementation(undoProcM, (IMP)hook_ChatOperationProcessor_processUndoMessage);
-                NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUndoMessage thành công!");
             }
 
             Method updateUndoM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUpdateUndoWithChatEntity:"));
@@ -444,7 +517,6 @@ static void installAllZaloModHooks(void) {
                 IMP origImp = method_getImplementation(updateUndoM);
                 class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUpdateUndo:"), origImp, method_getTypeEncoding(updateUndoM));
                 method_setImplementation(updateUndoM, (IMP)hook_ChatOperationProcessor_processUpdateUndo);
-                NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUpdateUndo thành công!");
             }
         }
 
@@ -469,7 +541,6 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Đã mở khóa chọn ảnh Original không cần zCloud!");
         }
 
-        // Cấu hình ZCFQualityPickerConfig cho phép gửi ảnh Original mặc định
         Class qpConfigCls = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
         if (qpConfigCls) {
             Method mSendOrig = class_getClassMethod(qpConfigCls, sel_registerName("enableSendOriginal"));
@@ -485,7 +556,6 @@ static void installAllZaloModHooks(void) {
             if (mQuality) method_setImplementation(mQuality, (IMP)hook_originalCompressQuality);
         }
 
-        // Cấu hình ZSharedData bỏ giới hạn dung lượng ảnh gốc
         Class zSharedCls = objc_getClass("ZSharedData");
         if (zSharedCls) {
             Method mSetting = class_getInstanceMethod(zSharedCls, sel_registerName("settingOriginalPhotoQuality"));
@@ -501,7 +571,7 @@ static void installAllZaloModHooks(void) {
             if (mRemHD) method_setImplementation(mRemHD, (IMP)hook_alwaysTrue);
         }
 
-        // Hook ZAChatSendingManager: Gửi tin nhắn tự động kèm TTL và tự động gửi ảnh Original
+        // Hook ZAChatSendingManager: Gửi tin nhắn tự động áp dụng Font, TTL và ảnh Original
         Class sendMgrCls = objc_getClass("ZAChatSendingManager");
         if (sendMgrCls) {
             Method m1 = class_getInstanceMethod(sendMgrCls, sel_registerName("sendChat:checkUpload:"));
@@ -516,7 +586,7 @@ static void installAllZaloModHooks(void) {
                 class_addMethod(sendMgrCls, sel_registerName("zaloMod_orig_sendChat_destinations:"), orig, method_getTypeEncoding(m2));
                 method_setImplementation(m2, (IMP)hook_sendChat_destinations);
             }
-            NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager tự động gửi ảnh Original thành công!");
+            NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager áp dụng Font, TTL, Original thành công!");
         }
 
         // Hook RichMessageContent: Gán cờ Original/PhotoHD cho ảnh gửi đi
@@ -654,7 +724,6 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Hook SocialFeatureSetting ZStyle thành công!");
         }
 
-        // Hook StickersBottomSheetPackInfo: Mở khóa mua tất cả frame/sticker/theme ZStyle
         Class stickerPackCls = objc_getClass("_TtC19CommFeatureBusiness27StickersBottomSheetPackInfo") ?: objc_getClass("StickersBottomSheetPackInfo");
         if (stickerPackCls) {
             Method mPaid = class_getInstanceMethod(stickerPackCls, sel_registerName("isPaidZStyle"));
@@ -682,7 +751,7 @@ static void installAllZaloModHooks(void) {
             if (mOrigPrice) method_setImplementation(mOrigPrice, (IMP)hook_zeroPrice);
         }
 
-        // 5. Hook TTL vào ChatDataManager
+        // 5. Hook TTL & Font vào ChatDataManager
         Class chatDataMgrCls = objc_getClass("ChatDataManager");
         if (chatDataMgrCls) {
             Method mSync = class_getInstanceMethod(chatDataMgrCls, sel_registerName("syncMessageWithCurrentDisappearingTTLIfNeed:"));
@@ -690,7 +759,6 @@ static void installAllZaloModHooks(void) {
                 IMP orig = method_getImplementation(mSync);
                 class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"), orig, method_getTypeEncoding(mSync));
                 method_setImplementation(mSync, (IMP)hook_syncMessageWithCurrentDisappearingTTLIfNeed);
-                NSLog(@"[DucLamXNgBao] Hook ChatDataManager syncMessageWithCurrentDisappearingTTL thành công!");
             }
 
             Method mAttach = class_getInstanceMethod(chatDataMgrCls, sel_registerName("attachTTLValueForMessageIfNeed:"));
@@ -698,22 +766,20 @@ static void installAllZaloModHooks(void) {
                 IMP orig = method_getImplementation(mAttach);
                 class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"), orig, method_getTypeEncoding(mAttach));
                 method_setImplementation(mAttach, (IMP)hook_attachTTLValueForMessageIfNeed);
-                NSLog(@"[DucLamXNgBao] Hook ChatDataManager attachTTLValueForMessageIfNeed thành công!");
             }
         }
 
-        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - BẢN FIX CRASH HOÀN HẢO!");
+        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%!");
     });
 }
 
 // Constructor Tweak
 __attribute__((constructor))
 static void initZaloModVIP(void) {
-    // Kích hoạt runtime hooks chuẩn
     installAllZaloModHooks();
 
     void (^setupBlock)(NSNotification *) = ^(NSNotification * _Nonnull note) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [[ZaloModManager sharedManager] setupFloatingButton];
         });
     };
@@ -735,11 +801,14 @@ static void initZaloModVIP(void) {
                                                       usingBlock:setupBlock];
     }
 
-    // Fallback timers an toàn
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    // Fallback timers đảm bảo menu hiện lên 100%
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [[ZaloModManager sharedManager] setupFloatingButton];
     });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [[ZaloModManager sharedManager] setupFloatingButton];
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [[ZaloModManager sharedManager] setupFloatingButton];
     });
 }
