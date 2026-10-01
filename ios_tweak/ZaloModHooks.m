@@ -233,6 +233,39 @@ static id hook_originalBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
+// 5b. HOOK TỰ ĐỘNG GÁN TTL (24H, 1H, 5P,...) VÀO TIN NHẮN
+// =========================================================================
+static void hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
+    if (orig) orig(self, _cmd, chat);
+
+    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+    if (ttlSecs > 0 && [chat respondsToSelector:@selector(setTtl:)]) {
+        [chat setTtl:(long long)ttlSecs];
+    }
+}
+
+@interface NSJSONSerialization (ZaloModTTL)
+@end
+
+@implementation NSJSONSerialization (ZaloModTTL)
++ (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
+    if ([obj isKindOfClass:[NSDictionary class]]) {
+        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        if (ttlSecs > 0) {
+            NSMutableDictionary *dict = [obj mutableCopy];
+            if (dict[@"text"] || dict[@"msg"] || dict[@"cmsg"] || dict[@"content"]) {
+                dict[@"ttl"] = @(ttlSecs);
+                dict[@"ttl_sec"] = @(ttlSecs);
+                return [self zaloMod_dataWithJSONObject:dict options:opt error:error];
+            }
+        }
+    }
+    return [self zaloMod_dataWithJSONObject:obj options:opt error:error];
+}
+@end
+
+// =========================================================================
 // 6. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
 // =========================================================================
 static BOOL hook_alwaysTrue(id self, SEL _cmd) {
@@ -405,7 +438,25 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 5. Dọn dẹp view cũ trên UIViewController
+        // 5. Hook TTL vào ChatDataManager & NSJSONSerialization
+        Class chatDataMgrCls = objc_getClass("ChatDataManager");
+        if (chatDataMgrCls) {
+            Method mSync = class_getInstanceMethod(chatDataMgrCls, sel_registerName("syncMessageWithCurrentDisappearingTTLIfNeed:"));
+            if (mSync) {
+                IMP orig = method_getImplementation(mSync);
+                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"), orig, method_getTypeEncoding(mSync));
+                method_setImplementation(mSync, (IMP)hook_syncMessageWithCurrentDisappearingTTLIfNeed);
+                NSLog(@"[DucLamXNgBao] Hook ChatDataManager syncMessageWithCurrentDisappearingTTL thành công!");
+            }
+        }
+
+        Method origJSON = class_getClassMethod([NSJSONSerialization class], @selector(dataWithJSONObject:options:error:));
+        Method swizJSON = class_getClassMethod([NSJSONSerialization class], @selector(zaloMod_dataWithJSONObject:options:error:));
+        if (origJSON && swizJSON) {
+            method_exchangeImplementations(origJSON, swizJSON);
+        }
+
+        // 6. Dọn dẹp view cũ trên UIViewController
         swizzleInstanceMethod([UIViewController class], @selector(viewDidAppear:), @selector(zaloMod_viewDidAppear:));
 
         NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - SIÊU MƯỢT, TIN NHẮN CHUẨN ĐẸP!");
