@@ -325,25 +325,10 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
     container.frame = CGRectMake(containerX, containerY, badgeW, badgeH);
     container.hidden = ![ZaloModViewController isBugZBusinessEnabled];
 
-    // 2. Sticker Người tuyết zStyle ⛄ trên Avatar tròn
-    for (UIView *sub in parent.subviews) {
-        if ([sub isKindOfClass:[UIImageView class]] && sub.bounds.size.width >= 50 && sub.bounds.size.width <= 140) {
-            sub.layer.borderColor = [UIColor colorWithRed:0.3 green:0.75 blue:1.0 alpha:0.8].CGColor;
-            sub.layer.borderWidth = 2.5;
-
-            UILabel *sticker = (UILabel *)[parent viewWithTag:777666];
-            if (!sticker) {
-                sticker = [[UILabel alloc] init];
-                sticker.tag = 777666;
-                sticker.text = @"⛄";
-                sticker.font = [UIFont systemFontOfSize:26.0];
-                sticker.textAlignment = NSTextAlignmentCenter;
-                [parent addSubview:sticker];
-            }
-            sticker.frame = CGRectMake(sub.frame.origin.x - 6, sub.frame.origin.y - 6, 34, 34);
-            sticker.hidden = ![ZaloModViewController isBugZBusinessEnabled];
-            break;
-        }
+    // Xóa bỏ hoàn toàn sticker Người tuyết trên Avatar
+    UIView *existingSticker = [parent viewWithTag:777666];
+    if (existingSticker) {
+        [existingSticker removeFromSuperview];
     }
 }
 @end
