@@ -17,6 +17,7 @@ static NSString * const kPrefBugOriginal    = @"ZaloMod_BugOriginal";
 static NSString * const kPrefBugZBusiness   = @"ZaloMod_BugZBusiness";
 static NSString * const kPrefBugZLStyle     = @"ZaloMod_BugZLStyle";
 static NSString * const kPrefSelectedFont   = @"ZaloMod_SelectedFont";
+static NSString * const kPrefCustomFontSize = @"ZaloMod_CustomFontSize";
 
 @interface ZaloModViewController () <UITextFieldDelegate>
 
@@ -38,6 +39,9 @@ static NSString * const kPrefSelectedFont   = @"ZaloMod_SelectedFont";
 @property (nonatomic, strong) UILabel *lblTTLSummary;
 @property (nonatomic, strong) UILabel *lblCurrentFont;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *fontButtons;
+@property (nonatomic, strong) UISegmentedControl *fontSizeSegment;
+@property (nonatomic, strong) UITextField *txtFontSize;
+@property (nonatomic, strong) UILabel *lblFontSizeSummary;
 @property (nonatomic, strong) UITextField *txtTargetId;
 @property (nonatomic, strong) UITextField *txtMessageContent;
 @property (nonatomic, strong) UITextField *txtGroupLinkOrId;
@@ -78,6 +82,16 @@ static ZaloModViewController *_sharedMenuVC = nil;
 
 + (NSInteger)customTTLSeconds {
     return (NSInteger)([self customTTLMilliseconds] / 1000LL);
+}
+
++ (CGFloat)customFontSize {
+    CGFloat val = [[NSUserDefaults standardUserDefaults] floatForKey:kPrefCustomFontSize];
+    return val > 0 ? val : 0;
+}
+
++ (void)setCustomFontSize:(CGFloat)size {
+    [[NSUserDefaults standardUserDefaults] setFloat:size forKey:kPrefCustomFontSize];
+    [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 + (BOOL)isBugZLStyleEnabled {
@@ -276,9 +290,9 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.tabMessagesView.frame = CGRectMake(0, 0, contentW, y + 20);
 
     // =========================================================================
-    // TAB 1: BẢNG FONT CHỮ TYPOGRAPHY 3 HÀNG CHUẨN
+    // TAB 1: BẢNG FONT CHỮ TYPOGRAPHY & CHỈNH SIZE CHỮ (CHỮ TO)
     // =========================================================================
-    self.tabFontsView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 420)];
+    self.tabFontsView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 560)];
     y = 12.0;
 
     UILabel *lblFHeader = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 22)];
@@ -288,13 +302,15 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self.tabFontsView addSubview:lblFHeader];
     y += 28;
 
-    NSArray *row1 = @[@"Tắt", @"Random", @"Pixel", @"Vintage"];
-    NSArray *row2 = @[@"Florence", @"Notes", @"Elegant", @"Amatic"];
-    NSArray *row3 = @[@"Terminal", @"Retro", @"Young", @"School"];
+    NSArray *row1 = @[@"Tắt", @"Chữ To", @"Random", @"Pixel"];
+    NSArray *row2 = @[@"Vintage", @"Florence", @"Notes", @"Elegant"];
+    NSArray *row3 = @[@"Amatic", @"Terminal", @"Retro", @"Young"];
+    NSArray *row4 = @[@"School"];
 
     y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 1:" fonts:row1];
     y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 2:" fonts:row2];
     y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 3:" fonts:row3];
+    y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 4:" fonts:row4];
 
     NSString *savedFont = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefSelectedFont] ?: @"Tắt";
     self.lblCurrentFont = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 24)];
@@ -302,7 +318,50 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.lblCurrentFont.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     self.lblCurrentFont.font = [UIFont boldSystemFontOfSize:13.0];
     [self.tabFontsView addSubview:self.lblCurrentFont];
-    y += 34;
+    y += 36;
+
+    // PHẦN CHỈNH SIZE CHỮ Ô NHẬP TIN NHẮN (CHỮ TO)
+    UILabel *lblSizeHeader = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 22)];
+    lblSizeHeader.text = @"📏 Chỉnh Kích Thước / Size Chữ Ô Nhập (Chữ To):";
+    lblSizeHeader.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0]; // Gold
+    lblSizeHeader.font = [UIFont boldSystemFontOfSize:12.5];
+    [self.tabFontsView addSubview:lblSizeHeader];
+    y += 26;
+
+    NSArray *sizePresets = @[@"Mặc định", @"To (20)", @"Rất To (26)", @"Khổng Lồ (32)"];
+    self.fontSizeSegment = [[UISegmentedControl alloc] initWithItems:sizePresets];
+    self.fontSizeSegment.frame = CGRectMake(14, y, contentW - 28, 30);
+    [self setupFontSizeSelection];
+    [self.fontSizeSegment addTarget:self action:@selector(fontSizePresetChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.tabFontsView addSubview:self.fontSizeSegment];
+    y += 38;
+
+    CGFloat sizeInputW = contentW - 28 - 100;
+    self.txtFontSize = [self createTextFieldWithPlaceholder:@"Nhập size (vd: 20, 24, 28, 32...)" y:y width:sizeInputW];
+    self.txtFontSize.keyboardType = UIKeyboardTypeNumberPad;
+    CGFloat currentSavedSize = [ZaloModViewController customFontSize];
+    if (currentSavedSize > 0) {
+        self.txtFontSize.text = [NSString stringWithFormat:@"%.0f", currentSavedSize];
+    }
+    [self.tabFontsView addSubview:self.txtFontSize];
+
+    UIButton *btnApplySize = [UIButton buttonWithType:UIButtonTypeCustom];
+    btnApplySize.frame = CGRectMake(14 + sizeInputW + 6, y, 94, 36);
+    btnApplySize.backgroundColor = [UIColor colorWithRed:0.0 green:0.7 blue:0.4 alpha:1.0];
+    btnApplySize.layer.cornerRadius = 8.0;
+    [btnApplySize setTitle:@"⚡ Lưu Size" forState:UIControlStateNormal];
+    [btnApplySize setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btnApplySize.titleLabel.font = [UIFont boldSystemFontOfSize:12.5];
+    [btnApplySize addTarget:self action:@selector(actionApplyFontSize) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabFontsView addSubview:btnApplySize];
+    y += 42;
+
+    self.lblFontSizeSummary = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 20)];
+    self.lblFontSizeSummary.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    self.lblFontSizeSummary.font = [UIFont boldSystemFontOfSize:12.0];
+    [self updateFontSizeSummaryLabel];
+    [self.tabFontsView addSubview:self.lblFontSizeSummary];
+    y += 28;
 
     self.tabFontsView.frame = CGRectMake(0, 0, contentW, y + 20);
 
@@ -527,6 +586,66 @@ static ZaloModViewController *_sharedMenuVC = nil;
         self.ttlSegment.selectedSegmentIndex = unit;
     } else {
         self.ttlSegment.selectedSegmentIndex = 0;
+    }
+}
+
+- (void)setupFontSizeSelection {
+    CGFloat cur = [ZaloModViewController customFontSize];
+    if (cur <= 0) {
+        self.fontSizeSegment.selectedSegmentIndex = 0;
+    } else if (fabs(cur - 20.0) < 0.5) {
+        self.fontSizeSegment.selectedSegmentIndex = 1;
+    } else if (fabs(cur - 26.0) < 0.5) {
+        self.fontSizeSegment.selectedSegmentIndex = 2;
+    } else if (fabs(cur - 32.0) < 0.5) {
+        self.fontSizeSegment.selectedSegmentIndex = 3;
+    } else {
+        self.fontSizeSegment.selectedSegmentIndex = UISegmentedControlNoSegment;
+    }
+}
+
+- (void)fontSizePresetChanged:(UISegmentedControl *)sender {
+    CGFloat chosenSize = 0;
+    switch (sender.selectedSegmentIndex) {
+        case 0: chosenSize = 0; break; // Mặc định
+        case 1: chosenSize = 20.0; break;
+        case 2: chosenSize = 26.0; break;
+        case 3: chosenSize = 32.0; break;
+        default: break;
+    }
+    [ZaloModViewController setCustomFontSize:chosenSize];
+    if (chosenSize > 0) {
+        self.txtFontSize.text = [NSString stringWithFormat:@"%.0f", chosenSize];
+    } else {
+        self.txtFontSize.text = @"";
+    }
+    [self updateFontSizeSummaryLabel];
+    [self showToast:[NSString stringWithFormat:@"Đã đặt cỡ chữ: %@", chosenSize > 0 ? [NSString stringWithFormat:@"%.0f px (Chữ To)", chosenSize] : @"Mặc định"]];
+}
+
+- (void)actionApplyFontSize {
+    [self.view endEditing:YES];
+    CGFloat size = [self.txtFontSize.text floatValue];
+    if (size > 0 && size < 10) size = 10;
+    if (size > 60) size = 60;
+    [ZaloModViewController setCustomFontSize:size];
+    [self setupFontSizeSelection];
+    [self updateFontSizeSummaryLabel];
+    if (size > 0) {
+        [self showToast:[NSString stringWithFormat:@"✅ Đã lưu cỡ chữ: %.0f px (Chữ To)", size]];
+    } else {
+        [self showToast:@"⚪ Đã đưa cỡ chữ về Mặc định"];
+    }
+}
+
+- (void)updateFontSizeSummaryLabel {
+    CGFloat cur = [ZaloModViewController customFontSize];
+    if (cur > 0) {
+        self.lblFontSizeSummary.text = [NSString stringWithFormat:@"✅ Cỡ chữ hiện tại: %.0f px (Chữ To)", cur];
+        self.lblFontSizeSummary.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    } else {
+        self.lblFontSizeSummary.text = @"⚪ Cỡ chữ hiện tại: Mặc định (Theo hệ thống Zalo)";
+        self.lblFontSizeSummary.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.6];
     }
 }
 
