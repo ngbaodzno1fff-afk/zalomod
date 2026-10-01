@@ -173,29 +173,39 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 @end
 
 // =========================================================================
-// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - KHÔNG PHÁ HỎNG BONG BÓNG CHAT
+// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - GIỮ NGUYÊN NỘI DUNG VÀ BONG BÓNG CHAT
 // =========================================================================
-static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id item) {
-    if ([ZaloModViewController isAntiUndoEnabled]) {
-        NSLog(@"[DucLamXNgBao Anti-Undo] Đã chặn lệnh thu hồi tin nhắn từ Server!");
+static void hook_UndoChatProcessor_updateUndoMessageContent(id self, SEL _cmd, id chat) {
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_updateUndoMessageContent:"));
+    if (orig) orig(self, _cmd, chat);
+
+    if ([ZaloModViewController isAntiUndoEnabled] && chat) {
+        SEL origRecallSel = sel_registerName("_originTextRecallMsg");
+        SEL msgSel = sel_registerName("message");
+        SEL setMsgSel = sel_registerName("setMessage:");
+
+        NSString *origText = nil;
+        if ([chat respondsToSelector:origRecallSel]) {
+            origText = ((id (*)(id, SEL))objc_msgSend)(chat, origRecallSel);
+        }
+        if (!origText || origText.length == 0) {
+            if ([chat respondsToSelector:msgSel]) {
+                origText = ((id (*)(id, SEL))objc_msgSend)(chat, msgSel);
+            }
+        }
+        if (!origText || origText.length == 0) {
+            origText = @"[Tin nhắn đã gửi]";
+        }
+
+        if (origText && origText.length > 0 && ![origText containsString:@"( đã thu hồi )"]) {
+            NSString *annotatedMsg = [NSString stringWithFormat:@"%@ ( đã thu hồi )", origText];
+            if ([chat respondsToSelector:setMsgSel]) {
+                ((void (*)(id, SEL, id))objc_msgSend)(chat, setMsgSel, annotatedMsg);
+            }
+        }
         dispatch_async(dispatch_get_main_queue(), ^{
             [[ZaloFloatingButton sharedInstance] incrementBadge];
         });
-        return; // KHÔNG THỰC THI LỆNH XÓA/THU HỒI -> Tin nhắn được giữ nguyên vẹn 100%!
-    }
-    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUndoMessage:"));
-    if (orig) {
-        orig(self, _cmd, item);
-    }
-}
-
-static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id chat) {
-    if ([ZaloModViewController isAntiUndoEnabled]) {
-        return; // Chặn cập nhật trạng thái xóa vào ChatEntity!
-    }
-    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUpdateUndo:"));
-    if (orig) {
-        orig(self, _cmd, chat);
     }
 }
 
@@ -234,17 +244,83 @@ static id hook_originalBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 5b. HOOK TỰ ĐỘNG GÁN TTL (24H, 1H, 5P,...) VÀO TIN NHẮN
+// 5b. HOOK TỰ ĐỘNG GÁN TTL (24H, 1H, 5P,...) VÀO TIN NHẮN (CHUẨN MILLISECONDS)
 // =========================================================================
-static void hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
-    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
-    if (orig) orig(self, _cmd, chat);
+static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
+    id (*orig)(id, SEL, id) = (id (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
+    id result = orig ? orig(self, _cmd, chat) : chat;
+    if (!result) result = chat;
 
     NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    SEL setTtlSel = sel_registerName("setTtl:");
-    if (ttlSecs > 0 && [chat respondsToSelector:setTtlSel]) {
-        ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, (long long)ttlSecs);
+    if (ttlSecs > 0) {
+        long long ttlMs = (long long)ttlSecs * 1000LL;
+        SEL setTtlSel = sel_registerName("setTtl:");
+        if ([result respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(result, setTtlSel, ttlMs);
+        }
+        if (chat != result && [chat respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
+        }
     }
+    return result;
+}
+
+static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
+    BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"));
+    BOOL res = orig ? orig(self, _cmd, chat) : NO;
+
+    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+    if (ttlSecs > 0 && chat) {
+        long long ttlMs = (long long)ttlSecs * 1000LL;
+        SEL setTtlSel = sel_registerName("setTtl:");
+        if ([chat respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
+        }
+        return YES;
+    }
+    return res;
+}
+
+// Chống tin nhắn bị đếm ngược quá nhanh hoặc tự xóa trước khi đủ thời gian
+static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
+    long long ttl = 0;
+    SEL ttlSel = sel_registerName("ttl");
+    if ([self respondsToSelector:ttlSel]) {
+        ttl = ((long long (*)(id, SEL))objc_msgSend)(self, ttlSel);
+    }
+    if (ttl <= 0) return NO;
+
+    // Tự động scale nếu ttl bị gán theo giây thay vì milliseconds
+    if (ttl > 0 && ttl < 1000) {
+        ttl = ttl * 1000LL;
+        SEL setTtlSel = sel_registerName("setTtl:");
+        if ([self respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(self, setTtlSel, ttl);
+        }
+    }
+
+    double createTime = 0;
+    SEL tsSel = sel_registerName("ts");
+    if ([self respondsToSelector:tsSel]) {
+        createTime = ((double (*)(id, SEL))objc_msgSend)(self, tsSel);
+    }
+    if (createTime <= 0) {
+        SEL timeSel = sel_registerName("time");
+        if ([self respondsToSelector:timeSel]) {
+            createTime = ((double (*)(id, SEL))objc_msgSend)(self, timeSel) * 1000.0;
+        }
+    }
+
+    if (createTime > 0 && ttl > 0) {
+        double nowMs = [[NSDate date] timeIntervalSince1970] * 1000.0;
+        double expireAtMs = createTime + (double)ttl;
+        if (nowMs < expireAtMs) {
+            return NO; // Chưa đủ thời gian hết hạn -> Giữ nguyên tin nhắn!
+        }
+    }
+
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isExpiredMessage"));
+    return orig ? orig(self, _cmd) : NO;
 }
 
 @interface NSJSONSerialization (ZaloModTTL)
@@ -254,13 +330,24 @@ static void hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, 
 + (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
     if ([obj isKindOfClass:[NSDictionary class]]) {
         NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        NSMutableDictionary *dict = nil;
         if (ttlSecs > 0) {
-            NSMutableDictionary *dict = [obj mutableCopy];
+            dict = [obj mutableCopy];
             if (dict[@"text"] || dict[@"msg"] || dict[@"cmsg"] || dict[@"content"]) {
-                dict[@"ttl"] = @(ttlSecs);
+                long long ttlMs = (long long)ttlSecs * 1000LL;
+                dict[@"ttl"] = @(ttlMs);
                 dict[@"ttl_sec"] = @(ttlSecs);
-                return [self zaloMod_dataWithJSONObject:dict options:opt error:error];
+                dict[@"ttl_server"] = @(ttlMs);
             }
+        }
+        if ([ZaloModViewController isBugOriginalEnabled]) {
+            if (!dict) dict = [obj mutableCopy];
+            if (dict[@"hd"] || dict[@"photo"] || dict[@"image"] || dict[@"thumb"]) {
+                dict[@"is_original"] = @(1);
+            }
+        }
+        if (dict) {
+            return [self zaloMod_dataWithJSONObject:dict options:opt error:error];
         }
     }
     return [self zaloMod_dataWithJSONObject:obj options:opt error:error];
@@ -361,23 +448,16 @@ static void installAllZaloModHooks(void) {
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
 
-        // 2. Hook Anti-Undo trên ChatOperationProcessor (Chặn lệnh xóa từ Server, giữ nguyên tin nhắn thật)
-        Class chatOpProcCls = objc_getClass("ChatOperationProcessor");
-        if (chatOpProcCls) {
-            Method undoProcM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUndoMessageWithOperationItem:"));
-            if (undoProcM) {
-                IMP origImp = method_getImplementation(undoProcM);
-                class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUndoMessage:"), origImp, method_getTypeEncoding(undoProcM));
-                method_setImplementation(undoProcM, (IMP)hook_ChatOperationProcessor_processUndoMessage);
-                NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUndoMessage thành công!");
-            }
-
-            Method updateUndoM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUpdateUndoWithChatEntity:"));
-            if (updateUndoM) {
-                IMP origImp = method_getImplementation(updateUndoM);
-                class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUpdateUndo:"), origImp, method_getTypeEncoding(updateUndoM));
-                method_setImplementation(updateUndoM, (IMP)hook_ChatOperationProcessor_processUpdateUndo);
-                NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUpdateUndo thành công!");
+        // 2. Hook Anti-Undo trên UndoChatProcessor (Giữ nguyên nội dung, hiện nhãn 'đã thu hồi' rõ ràng)
+        Class undoProcCls = objc_getClass("UndoChatProcessor");
+        if (undoProcCls) {
+            Class metaCls = object_getClass(undoProcCls);
+            Method mUndo = class_getClassMethod(undoProcCls, sel_registerName("updateUndoMessageContent:"));
+            if (mUndo && metaCls) {
+                IMP origImp = method_getImplementation(mUndo);
+                class_addMethod(metaCls, sel_registerName("zaloMod_orig_updateUndoMessageContent:"), origImp, method_getTypeEncoding(mUndo));
+                method_setImplementation(mUndo, (IMP)hook_UndoChatProcessor_updateUndoMessageContent);
+                NSLog(@"[DucLamXNgBao] Hook UndoChatProcessor updateUndoMessageContent thành công!");
             }
         }
 
@@ -394,6 +474,9 @@ static void installAllZaloModHooks(void) {
 
             Method mBadge = class_getInstanceMethod(pickerVCCls, sel_registerName("originalBadge"));
             if (mBadge) method_setImplementation(mBadge, (IMP)hook_originalBadge);
+
+            Method mAllowed = class_getInstanceMethod(pickerVCCls, sel_registerName("isOriginAllowed:"));
+            if (mAllowed) method_setImplementation(mAllowed, (IMP)hook_enableShowOriginPhoto);
 
             NSLog(@"[DucLamXNgBao] Đã mở khóa chọn ảnh Original không cần zCloud!");
         }
@@ -440,7 +523,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 5. Hook TTL vào ChatDataManager & NSJSONSerialization
+        // 5. Hook TTL vào ChatDataManager, ChatEntity & NSJSONSerialization (Chuẩn Milliseconds)
         Class chatDataMgrCls = objc_getClass("ChatDataManager");
         if (chatDataMgrCls) {
             Method mSync = class_getInstanceMethod(chatDataMgrCls, sel_registerName("syncMessageWithCurrentDisappearingTTLIfNeed:"));
@@ -449,6 +532,26 @@ static void installAllZaloModHooks(void) {
                 class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"), orig, method_getTypeEncoding(mSync));
                 method_setImplementation(mSync, (IMP)hook_syncMessageWithCurrentDisappearingTTLIfNeed);
                 NSLog(@"[DucLamXNgBao] Hook ChatDataManager syncMessageWithCurrentDisappearingTTL thành công!");
+            }
+
+            Method mAttach = class_getInstanceMethod(chatDataMgrCls, sel_registerName("attachTTLValueForMessageIfNeed:"));
+            if (mAttach) {
+                IMP orig = method_getImplementation(mAttach);
+                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"), orig, method_getTypeEncoding(mAttach));
+                method_setImplementation(mAttach, (IMP)hook_attachTTLValueForMessageIfNeed);
+                NSLog(@"[DucLamXNgBao] Hook ChatDataManager attachTTLValueForMessageIfNeed thành công!");
+            }
+        }
+
+        // Hook ChatEntity isExpiredMessage (Chống đếm giây nhanh / tự mất tin nhắn sớm)
+        Class chatEntityCls = objc_getClass("ChatEntity");
+        if (chatEntityCls) {
+            Method mExpired = class_getInstanceMethod(chatEntityCls, sel_registerName("isExpiredMessage"));
+            if (mExpired) {
+                IMP orig = method_getImplementation(mExpired);
+                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_isExpiredMessage"), orig, method_getTypeEncoding(mExpired));
+                method_setImplementation(mExpired, (IMP)hook_ChatEntity_isExpiredMessage);
+                NSLog(@"[DucLamXNgBao] Hook ChatEntity isExpiredMessage (Chống đếm nhanh/mất sớm) thành công!");
             }
         }
 
