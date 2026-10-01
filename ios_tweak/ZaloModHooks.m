@@ -147,14 +147,16 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 
 @implementation UITextView (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    CGFloat customSize = [ZaloModViewController customFontSize];
-    if (customSize > 0) {
-        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
-    }
-    UIColor *col = [ZaloModViewController selectedTextColor];
-    if (col) {
-        self.textColor = col;
-    }
+    @try {
+        CGFloat customSize = [ZaloModViewController customFontSize];
+        if (customSize > 0) {
+            self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
+        }
+        UIColor *col = [ZaloModViewController selectedTextColor];
+        if (col) {
+            self.textColor = col;
+        }
+    } @catch (NSException *e) {}
 
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
@@ -163,21 +165,28 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
     } else {
         [self zaloMod_insertText:text];
     }
-    if (col) {
-        self.textColor = col;
-    }
+
+    @try {
+        UIColor *col = [ZaloModViewController selectedTextColor];
+        if (col) {
+            self.textColor = col;
+        }
+    } @catch (NSException *e) {}
 }
 
 - (BOOL)zaloMod_becomeFirstResponder {
-    CGFloat customSize = [ZaloModViewController customFontSize];
-    if (customSize > 0) {
-        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
-    }
-    UIColor *col = [ZaloModViewController selectedTextColor];
-    if (col) {
-        self.textColor = col;
-    }
-    return [self zaloMod_becomeFirstResponder];
+    BOOL res = [self zaloMod_becomeFirstResponder];
+    @try {
+        CGFloat customSize = [ZaloModViewController customFontSize];
+        if (customSize > 0) {
+            self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
+        }
+        UIColor *col = [ZaloModViewController selectedTextColor];
+        if (col) {
+            self.textColor = col;
+        }
+    } @catch (NSException *e) {}
+    return res;
 }
 @end
 
@@ -186,15 +195,6 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 
 @implementation UITextField (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    CGFloat customSize = [ZaloModViewController customFontSize];
-    if (customSize > 0) {
-        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
-    }
-    UIColor *col = [ZaloModViewController selectedTextColor];
-    if (col) {
-        self.textColor = col;
-    }
-
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
         NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
@@ -202,21 +202,6 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
     } else {
         [self zaloMod_insertText:text];
     }
-    if (col) {
-        self.textColor = col;
-    }
-}
-
-- (BOOL)zaloMod_becomeFirstResponder {
-    CGFloat customSize = [ZaloModViewController customFontSize];
-    if (customSize > 0) {
-        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
-    }
-    UIColor *col = [ZaloModViewController selectedTextColor];
-    if (col) {
-        self.textColor = col;
-    }
-    return [self zaloMod_becomeFirstResponder];
 }
 @end
 
@@ -377,16 +362,19 @@ static BOOL hook_RichMessageContent_isPhotoHD(id self, SEL _cmd) {
 // 5a. HELPER PHÂN BIỆT TIN NHẮN DO MÌNH GỬI vs TIN NHẮN NGƯỜI KHÁC GỬI ĐẾN
 // =========================================================================
 static BOOL isMessageFromMe(id chat) {
-    if (!chat) return NO;
+    if (!chat || ![chat isKindOfClass:[NSObject class]]) return NO;
     @try {
         if ([chat respondsToSelector:sel_registerName("isMyMessage")]) {
-            return ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isMyMessage"));
+            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isMyMessage"));
+            return (val != 0);
         }
         if ([chat respondsToSelector:sel_registerName("isOutgoing")]) {
-            return ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isOutgoing"));
+            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isOutgoing"));
+            return (val != 0);
         }
         if ([chat respondsToSelector:sel_registerName("isSenderMe")]) {
-            return ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isSenderMe"));
+            long long val = ((long long (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isSenderMe"));
+            return (val != 0);
         }
     } @catch (NSException *e) {}
     return NO;
@@ -424,13 +412,16 @@ static void hook_sendChat_destinations(id self, SEL _cmd, id chat, id dests, BOO
 // =========================================================================
 // 5b. HOOK TỰ ĐỘNG GÁN TTL TÙY CHỈNH (s, h, d) VÀO TIN NHẮN (CHUẨN MILLISECONDS)
 // =========================================================================
+static id (*orig_syncMessageWithCurrentDisappearingTTLIfNeed)(id, SEL, id) = NULL;
+static BOOL (*orig_attachTTLValueForMessageIfNeed)(id, SEL, id) = NULL;
+static BOOL (*orig_ChatEntity_isExpiredMessage)(id, SEL) = NULL;
+
 static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
-    id (*orig)(id, SEL, id) = (id (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
-    id result = orig ? orig(self, _cmd, chat) : chat;
+    id result = orig_syncMessageWithCurrentDisappearingTTLIfNeed ? orig_syncMessageWithCurrentDisappearingTTLIfNeed(self, _cmd, chat) : chat;
     if (!result) result = chat;
 
     // QUAN TRỌNG: CHỈ GÁN TTL CHO TIN NHẮN DO CHÍNH MÌNH GỬI ĐI!
-    // Tuyệt đối không gán TTL cho tin nhắn của người khác gửi đến!
+    // Tuyệt đối không can thiệp tin nhắn của người khác gửi đến!
     if (isMessageFromMe(result) || isMessageFromMe(chat)) {
         long long ttlMs = [ZaloModViewController customTTLMilliseconds];
         if (ttlMs > 0) {
@@ -449,8 +440,7 @@ static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id
 }
 
 static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
-    BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"));
-    BOOL res = orig ? orig(self, _cmd, chat) : NO;
+    BOOL res = orig_attachTTLValueForMessageIfNeed ? orig_attachTTLValueForMessageIfNeed(self, _cmd, chat) : NO;
 
     // CHỈ GÁN CHO TIN NHẮN DO CHÍNH MÌNH GỬI ĐI:
     if (!isMessageFromMe(chat)) {
@@ -474,8 +464,7 @@ static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
     // NGUYÊN TẮC: Tin nhắn của người khác thì giữ nguyên 100% logic gốc của Zalo!
     // Không bao giờ can thiệp hay tự hủy nhầm tin nhắn của đối phương!
     if (!isMessageFromMe(self)) {
-        BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isExpiredMessage"));
-        return orig ? orig(self, _cmd) : NO;
+        return orig_ChatEntity_isExpiredMessage ? orig_ChatEntity_isExpiredMessage(self, _cmd) : NO;
     }
 
     long long ttl = 0;
@@ -514,27 +503,8 @@ static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
         }
     }
 
-    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isExpiredMessage"));
-    return orig ? orig(self, _cmd) : NO;
+    return orig_ChatEntity_isExpiredMessage ? orig_ChatEntity_isExpiredMessage(self, _cmd) : NO;
 }
-
-@interface NSJSONSerialization (ZaloModOriginalPhoto)
-@end
-
-@implementation NSJSONSerialization (ZaloModOriginalPhoto)
-+ (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
-    if ([ZaloModViewController isBugOriginalEnabled] && [obj isKindOfClass:[NSDictionary class]]) {
-        NSDictionary *dict = (NSDictionary *)obj;
-        if (dict[@"hd"] || dict[@"photo"] || dict[@"image"] || dict[@"thumb"] || dict[@"photo_url"] || dict[@"media"]) {
-            NSMutableDictionary *mdict = [dict mutableCopy];
-            mdict[@"is_original"] = @(1);
-            mdict[@"is_photo_hd"] = @(1);
-            return [self zaloMod_dataWithJSONObject:mdict options:opt error:error];
-        }
-    }
-    return [self zaloMod_dataWithJSONObject:obj options:opt error:error];
-}
-@end
 
 // =========================================================================
 // 6. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
@@ -582,7 +552,7 @@ static NSDictionary *getZStyleVIPDictionary(void) {
 
 @implementation NSUserDefaults (ZaloModZStyle)
 - (id)zaloMod_objectForKey:(NSString *)defaultName {
-    if ([ZaloModViewController isBugZLStyleEnabled] && defaultName && [defaultName containsString:@"kProfileSetting_ZStyleInfo"]) {
+    if (defaultName && [defaultName containsString:@"kProfileSetting_ZStyleInfo"]) {
         return getZStyleVIPDictionary();
     }
     return [self zaloMod_objectForKey:defaultName];
@@ -709,7 +679,6 @@ static void installAllZaloModHooks(void) {
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
         swizzleInstanceMethod([UITextView class], @selector(becomeFirstResponder), @selector(zaloMod_becomeFirstResponder));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
-        swizzleInstanceMethod([UITextField class], @selector(becomeFirstResponder), @selector(zaloMod_becomeFirstResponder));
 
         // 2. Hook Anti-Undo trên UndoChatProcessor (Giữ nguyên nội dung, hiện nhãn 'đã thu hồi' rõ ràng)
         Class undoProcCls = objc_getClass("UndoChatProcessor");
@@ -1047,21 +1016,19 @@ static void installAllZaloModHooks(void) {
         // Swizzle NSUserDefaults objectForKey: để trả về VIP ZStyle Info khi app kiểm tra
         swizzleInstanceMethod([NSUserDefaults class], @selector(objectForKey:), @selector(zaloMod_objectForKey:));
 
-        // 5. Hook TTL vào ChatDataManager, ChatEntity & NSJSONSerialization (Chuẩn Milliseconds)
+        // 5. Hook TTL vào ChatDataManager & ChatEntity (Chuẩn Milliseconds)
         Class chatDataMgrCls = objc_getClass("ChatDataManager");
         if (chatDataMgrCls) {
             Method mSync = class_getInstanceMethod(chatDataMgrCls, sel_registerName("syncMessageWithCurrentDisappearingTTLIfNeed:"));
             if (mSync) {
-                IMP orig = method_getImplementation(mSync);
-                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"), orig, method_getTypeEncoding(mSync));
+                orig_syncMessageWithCurrentDisappearingTTLIfNeed = (id (*)(id, SEL, id))method_getImplementation(mSync);
                 method_setImplementation(mSync, (IMP)hook_syncMessageWithCurrentDisappearingTTLIfNeed);
                 NSLog(@"[DucLamXNgBao] Hook ChatDataManager syncMessageWithCurrentDisappearingTTL thành công!");
             }
 
             Method mAttach = class_getInstanceMethod(chatDataMgrCls, sel_registerName("attachTTLValueForMessageIfNeed:"));
             if (mAttach) {
-                IMP orig = method_getImplementation(mAttach);
-                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"), orig, method_getTypeEncoding(mAttach));
+                orig_attachTTLValueForMessageIfNeed = (BOOL (*)(id, SEL, id))method_getImplementation(mAttach);
                 method_setImplementation(mAttach, (IMP)hook_attachTTLValueForMessageIfNeed);
                 NSLog(@"[DucLamXNgBao] Hook ChatDataManager attachTTLValueForMessageIfNeed thành công!");
             }
@@ -1072,17 +1039,10 @@ static void installAllZaloModHooks(void) {
         if (chatEntityCls) {
             Method mExpired = class_getInstanceMethod(chatEntityCls, sel_registerName("isExpiredMessage"));
             if (mExpired) {
-                IMP orig = method_getImplementation(mExpired);
-                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_isExpiredMessage"), orig, method_getTypeEncoding(mExpired));
+                orig_ChatEntity_isExpiredMessage = (BOOL (*)(id, SEL))method_getImplementation(mExpired);
                 method_setImplementation(mExpired, (IMP)hook_ChatEntity_isExpiredMessage);
                 NSLog(@"[DucLamXNgBao] Hook ChatEntity isExpiredMessage (Chống đếm nhanh/mất sớm) thành công!");
             }
-        }
-
-        Method origJSON = class_getClassMethod([NSJSONSerialization class], @selector(dataWithJSONObject:options:error:));
-        Method swizJSON = class_getClassMethod([NSJSONSerialization class], @selector(zaloMod_dataWithJSONObject:options:error:));
-        if (origJSON && swizJSON) {
-            method_exchangeImplementations(origJSON, swizJSON);
         }
 
         // 6. Dọn dẹp view cũ trên UIViewController
