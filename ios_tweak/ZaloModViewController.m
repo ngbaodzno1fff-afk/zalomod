@@ -189,7 +189,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self.tabMessagesView addSubview:lblTTL];
     y += 24;
 
-    NSArray *ttlOptions = @[@"Tắt (0s)", @"5s", @"10s", @"30s", @"60s", @"5p", @"1h"];
+    NSArray *ttlOptions = @[@"Tắt", @"10s", @"30s", @"60s", @"5p", @"1h", @"24h"];
     self.ttlSegment = [[UISegmentedControl alloc] initWithItems:ttlOptions];
     self.ttlSegment.frame = CGRectMake(14, y, contentW - 28, 28);
     [self setupTTLSelection];
@@ -474,12 +474,12 @@ static ZaloModViewController *_sharedMenuVC = nil;
 - (void)setupTTLSelection {
     NSInteger ttl = [ZaloModViewController customTTLSeconds];
     if (ttl == 0) self.ttlSegment.selectedSegmentIndex = 0;
-    else if (ttl == 5) self.ttlSegment.selectedSegmentIndex = 1;
-    else if (ttl == 10) self.ttlSegment.selectedSegmentIndex = 2;
-    else if (ttl == 30) self.ttlSegment.selectedSegmentIndex = 3;
-    else if (ttl == 60) self.ttlSegment.selectedSegmentIndex = 4;
-    else if (ttl == 300) self.ttlSegment.selectedSegmentIndex = 5;
-    else if (ttl == 3600) self.ttlSegment.selectedSegmentIndex = 6;
+    else if (ttl == 10) self.ttlSegment.selectedSegmentIndex = 1;
+    else if (ttl == 30) self.ttlSegment.selectedSegmentIndex = 2;
+    else if (ttl == 60) self.ttlSegment.selectedSegmentIndex = 3;
+    else if (ttl == 300) self.ttlSegment.selectedSegmentIndex = 4;
+    else if (ttl == 3600) self.ttlSegment.selectedSegmentIndex = 5;
+    else if (ttl == 86400) self.ttlSegment.selectedSegmentIndex = 6;
     else self.ttlSegment.selectedSegmentIndex = 0;
 }
 
@@ -540,16 +540,21 @@ static ZaloModViewController *_sharedMenuVC = nil;
 - (void)ttlChanged:(UISegmentedControl *)s {
     NSInteger ttl = 0;
     switch (s.selectedSegmentIndex) {
-        case 1: ttl = 5; break;
-        case 2: ttl = 10; break;
-        case 3: ttl = 30; break;
-        case 4: ttl = 60; break;
-        case 5: ttl = 300; break;
-        case 6: ttl = 3600; break;
+        case 1: ttl = 10; break;
+        case 2: ttl = 30; break;
+        case 3: ttl = 60; break;
+        case 4: ttl = 300; break;
+        case 5: ttl = 3600; break;
+        case 6: ttl = 86400; break;
         default: ttl = 0; break;
     }
     [[NSUserDefaults standardUserDefaults] setInteger:ttl forKey:kPrefCustomTTL];
-    [self showToast:ttl > 0 ? [NSString stringWithFormat:@"⏱ Tự động gán TTL: %ld giây", (long)ttl] : @"⏱ Đã tắt tự hủy TTL"];
+    NSString *ttlDesc = @"";
+    if (ttl == 86400) ttlDesc = @"24 giờ (1 ngày)";
+    else if (ttl == 3600) ttlDesc = @"1 giờ";
+    else if (ttl == 300) ttlDesc = @"5 phút";
+    else if (ttl > 0) ttlDesc = [NSString stringWithFormat:@"%ld giây", (long)ttl];
+    [self showToast:ttl > 0 ? [NSString stringWithFormat:@"⏱ Tự động gán TTL: %@", ttlDesc] : @"⏱ Đã tắt tự hủy TTL"];
 }
 
 - (void)actionSendMessage {
