@@ -228,8 +228,36 @@ static void hook_UndoChatProcessor_updateUndoMessageContent(id self, SEL _cmd, i
 @end
 
 // =========================================================================
-// 5. MỞ KHÓA GỬI ẢNH GỐC & HD (KHÔNG BỊ BẮT MUA ZCLOUD)
+// 5. MỞ KHÓA GỬI ẢNH GỐC & HD (KHÔNG BỊ BẮT MUA ZCLOUD, TỰ ĐỘNG GỬI ORIGINAL)
 // =========================================================================
+// Helper kiểm tra và ép chế độ Original cho ảnh mà không làm ảnh hưởng tin nhắn văn bản
+static void markChatAsOriginalIfPhoto(id chat) {
+    if (!chat || ![ZaloModViewController isBugOriginalEnabled]) return;
+    @try {
+        BOOL isPhoto = NO;
+        if ([chat respondsToSelector:sel_registerName("isPhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhoto"))) {
+            isPhoto = YES;
+        } else if ([chat respondsToSelector:sel_registerName("isPhotoType")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhotoType"))) {
+            isPhoto = YES;
+        } else if ([chat respondsToSelector:sel_registerName("isPhotoAttachment")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhotoAttachment"))) {
+            isPhoto = YES;
+        } else if ([chat respondsToSelector:sel_registerName("isPhotoHD")]) {
+            isPhoto = YES;
+        }
+        if (isPhoto) {
+            if ([chat respondsToSelector:sel_registerName("setIsOriginal:")]) {
+                ((void (*)(id, SEL, long long))objc_msgSend)(chat, sel_registerName("setIsOriginal:"), 1);
+            }
+            if ([chat respondsToSelector:sel_registerName("setIsPhotoHD:")]) {
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(chat, sel_registerName("setIsPhotoHD:"), YES);
+            }
+            if ([chat respondsToSelector:sel_registerName("set_isOrigin:")]) {
+                ((void (*)(id, SEL, BOOL))objc_msgSend)(chat, sel_registerName("set_isOrigin:"), YES);
+            }
+        }
+    } @catch (NSException *e) {}
+}
+
 // Hook QualityPickerViewController (Bảng chọn chế độ gửi ảnh)
 static BOOL hook_enableShowOriginPhoto(id self, SEL _cmd) {
     return YES; // Cho phép hiển thị nút Original!
@@ -241,6 +269,89 @@ static NSInteger hook_originalBadgeType(id self, SEL _cmd) {
 
 static id hook_originalBadge(id self, SEL _cmd) {
     return nil; // Xóa chữ zCloud!
+}
+
+static NSInteger hook_currentQuality_original(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugOriginalEnabled]) return 2; // Original quality
+    return 2;
+}
+
+static float hook_originalCompressQuality(id self, SEL _cmd) {
+    return 1.0f; // Chất lượng gốc 100% không nén!
+}
+
+static int hook_allowRememberQuality(id self, SEL _cmd) {
+    return 1;
+}
+
+static long long hook_maxOriginalLimit(id self, SEL _cmd) {
+    return 999999999LL;
+}
+
+// Hook RichMessageContent (Chỉ gán Original nếu message thực sự là ảnh/media)
+static BOOL hook_RichMessageContent_isOriginal(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugOriginalEnabled]) {
+        BOOL isMedia = NO;
+        if ([self respondsToSelector:sel_registerName("isPhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isPhoto"))) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("isPhotoHD")] && ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isPhotoHD"))) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("photo")] && ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("photo")) != nil) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("thumb")] && ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("thumb")) != nil) {
+            isMedia = YES;
+        }
+        if (isMedia) return YES;
+    }
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("RichMessageContent"), sel_registerName("zaloMod_orig_isOriginal:"));
+    return orig ? orig(self, _cmd) : NO;
+}
+
+static BOOL hook_RichMessageContent_isPhotoHD(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugOriginalEnabled]) {
+        BOOL isMedia = NO;
+        if ([self respondsToSelector:sel_registerName("isPhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isPhoto"))) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("isPhotoHD")] && ((BOOL (*)(id, SEL))objc_msgSend)(self, sel_registerName("isPhotoHD"))) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("photo")] && ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("photo")) != nil) {
+            isMedia = YES;
+        } else if ([self respondsToSelector:sel_registerName("thumb")] && ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName("thumb")) != nil) {
+            isMedia = YES;
+        }
+        if (isMedia) return YES;
+    }
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("RichMessageContent"), sel_registerName("zaloMod_orig_isPhotoHD:"));
+    return orig ? orig(self, _cmd) : NO;
+}
+
+// Hook ZAChatSendingManager: Gửi tin nhắn tự động kèm TTL và tự động ép gửi ảnh Original
+static void hook_sendChat_checkUpload(id self, SEL _cmd, id chat, BOOL check) {
+    long long ttlMs = [ZaloModViewController customTTLMilliseconds];
+    if (ttlMs > 0 && chat) {
+        SEL setTtlSel = sel_registerName("setTtl:");
+        if ([chat respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
+        }
+    }
+    markChatAsOriginalIfPhoto(chat);
+
+    void (*orig)(id, SEL, id, BOOL) = (void (*)(id, SEL, id, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_checkUpload:"));
+    if (orig) orig(self, _cmd, chat, check);
+}
+
+static void hook_sendChat_destinations(id self, SEL _cmd, id chat, id dests, BOOL check, BOOL wait) {
+    long long ttlMs = [ZaloModViewController customTTLMilliseconds];
+    if (ttlMs > 0 && chat) {
+        SEL setTtlSel = sel_registerName("setTtl:");
+        if ([chat respondsToSelector:setTtlSel]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
+        }
+    }
+    markChatAsOriginalIfPhoto(chat);
+
+    void (*orig)(id, SEL, id, id, BOOL, BOOL) = (void (*)(id, SEL, id, id, BOOL, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_destinations:"));
+    if (orig) orig(self, _cmd, chat, dests, check, wait);
 }
 
 // =========================================================================
@@ -261,6 +372,8 @@ static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id
             ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
         }
     }
+    markChatAsOriginalIfPhoto(result);
+    if (chat != result) markChatAsOriginalIfPhoto(chat);
     return result;
 }
 
@@ -274,8 +387,9 @@ static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
         if ([chat respondsToSelector:setTtlSel]) {
             ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
         }
-        return YES;
+        res = YES;
     }
+    markChatAsOriginalIfPhoto(chat);
     return res;
 }
 
@@ -339,8 +453,9 @@ static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
         }
         if ([ZaloModViewController isBugOriginalEnabled]) {
             if (!dict) dict = [obj mutableCopy];
-            if (dict[@"hd"] || dict[@"photo"] || dict[@"image"] || dict[@"thumb"]) {
+            if (dict[@"hd"] || dict[@"photo"] || dict[@"image"] || dict[@"thumb"] || dict[@"photo_url"] || dict[@"media"]) {
                 dict[@"is_original"] = @(1);
+                dict[@"is_photo_hd"] = @(1);
             }
         }
         if (dict) {
@@ -375,8 +490,35 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 6b. BUG ALL ZSTYLES & NHẠC NỀN CHAT / PROFILE (PILL PLAYER)
+// 6b. BUG ALL ZSTYLES & NHẠC NỀN CHAT / PROFILE (PILL PLAYER & UNLOCK ALL STYLES)
 // =========================================================================
+static NSDictionary *getZStyleVIPDictionary(void) {
+    return @{
+        @"zstyle_package_id": @(1),
+        @"package_id": @(1),
+        @"is_zstyle": @(1),
+        @"is_subscribed": @(1),
+        @"status": @(1),
+        @"expired_time": @(4070908800ULL),
+        @"zstyle_music": @(1),
+        @"zstyle_avatar_frame": @(1),
+        @"zstyle_cover": @(1),
+        @"zstyle_namecard": @(1)
+    };
+}
+
+@interface NSUserDefaults (ZaloModZStyle)
+@end
+
+@implementation NSUserDefaults (ZaloModZStyle)
+- (id)zaloMod_objectForKey:(NSString *)defaultName {
+    if ([ZaloModViewController isBugZLStyleEnabled] && defaultName && [defaultName containsString:@"kProfileSetting_ZStyleInfo"]) {
+        return getZStyleVIPDictionary();
+    }
+    return [self zaloMod_objectForKey:defaultName];
+}
+@end
+
 static BOOL hook_isZStyleSubscribed(id self, SEL _cmd, id userId) {
     if ([ZaloModViewController isBugZLStyleEnabled]) return YES;
     BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_isZStyleSubscribed:"));
@@ -387,6 +529,12 @@ static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
     if ([ZaloModViewController isBugZLStyleEnabled]) return 1; // Gói ZStyle VIP 1
     NSInteger (*orig)(id, SEL, id) = (NSInteger (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_getZStylePackageId:"));
     return orig ? orig(self, _cmd, userId) : 0;
+}
+
+static NSDictionary *hook_getZStyleDictOfUser(id self, SEL _cmd, id userId) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return getZStyleVIPDictionary();
+    NSDictionary * (*orig)(id, SEL, id) = (NSDictionary * (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_getZStyleDictOfUser:"));
+    return orig ? orig(self, _cmd, userId) : nil;
 }
 
 static BOOL hook_zstyleAlwaysTrue(id self, SEL _cmd) {
@@ -406,22 +554,18 @@ static NSInteger hook_currentPillStatus(id self, SEL _cmd) {
 }
 
 static NSDictionary *hook_BuddyEntity_zstyleInfo(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return getZStyleVIPDictionary();
     NSDictionary * (*orig)(id, SEL) = (NSDictionary * (*)(id, SEL))class_getMethodImplementation(objc_getClass("BuddyEntity"), sel_registerName("zaloMod_orig_zstyleInfo"));
-    NSDictionary *res = orig ? orig(self, _cmd) : nil;
-    if ([ZaloModViewController isBugZLStyleEnabled]) {
-        if (!res || res.count == 0) {
-            return @{
-                @"zstyle_package_id": @(1),
-                @"package_id": @(1),
-                @"is_zstyle": @(1),
-                @"is_subscribed": @(1),
-                @"zstyle_music": @(1),
-                @"zstyle_avatar_frame": @(1),
-                @"zstyle_cover": @(1)
-            };
-        }
-    }
-    return res;
+    return orig ? orig(self, _cmd) : nil;
+}
+
+static NSInteger hook_zstylePackageIdVIP(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return 1;
+    return 0;
+}
+
+static long long hook_zeroPrice(id self, SEL _cmd) {
+    return 0;
 }
 
 // Dọn dẹp triệt để các subview thừa cũ trên UIViewController
@@ -510,7 +654,7 @@ static void installAllZaloModHooks(void) {
 
         swizzleInstanceMethod([UILabel class], @selector(setText:), @selector(zaloMod_setText:));
 
-        // 3. Mở khóa giao diện chọn ảnh Original (QualityPickerViewController)
+        // 3. Mở khóa giao diện và cấu hình gửi ảnh Original & HD không bị nén
         Class pickerVCCls = objc_getClass("_TtC19CommFeatureBusiness27QualityPickerViewController") ?: objc_getClass("QualityPickerViewController");
         if (pickerVCCls) {
             Method mShow = class_getInstanceMethod(pickerVCCls, sel_registerName("enableShowOriginPhoto"));
@@ -525,7 +669,80 @@ static void installAllZaloModHooks(void) {
             Method mAllowed = class_getInstanceMethod(pickerVCCls, sel_registerName("isOriginAllowed:"));
             if (mAllowed) method_setImplementation(mAllowed, (IMP)hook_enableShowOriginPhoto);
 
+            Method mCurQ = class_getInstanceMethod(pickerVCCls, sel_registerName("currentQuality"));
+            if (mCurQ) method_setImplementation(mCurQ, (IMP)hook_currentQuality_original);
+
             NSLog(@"[DucLamXNgBao] Đã mở khóa chọn ảnh Original không cần zCloud!");
+        }
+
+        // Cấu hình ZCFQualityPickerConfig cho phép gửi ảnh Original mặc định
+        Class qpConfigCls = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
+        if (qpConfigCls) {
+            Method mSendOrig = class_getClassMethod(qpConfigCls, sel_registerName("enableSendOriginal"));
+            if (mSendOrig) method_setImplementation(mSendOrig, (IMP)hook_alwaysTrue);
+
+            Method mBadge = class_getClassMethod(qpConfigCls, sel_registerName("originalBadge"));
+            if (mBadge) method_setImplementation(mBadge, (IMP)hook_originalBadge);
+
+            Method mBeta = class_getClassMethod(qpConfigCls, sel_registerName("showBadgeBeta"));
+            if (mBeta) method_setImplementation(mBeta, (IMP)hook_zstyleAlwaysFalse);
+
+            Method mRem = class_getClassMethod(qpConfigCls, sel_registerName("allowRememberQuality"));
+            if (mRem) method_setImplementation(mRem, (IMP)hook_allowRememberQuality);
+
+            Method mQuality = class_getClassMethod(qpConfigCls, sel_registerName("originalCompressQuality"));
+            if (mQuality) method_setImplementation(mQuality, (IMP)hook_originalCompressQuality);
+        }
+
+        // Cấu hình ZSharedData bỏ giới hạn dung lượng ảnh gốc
+        Class zSharedCls = objc_getClass("ZSharedData");
+        if (zSharedCls) {
+            Method mSetting = class_getInstanceMethod(zSharedCls, sel_registerName("settingOriginalPhotoQuality"));
+            if (mSetting) method_setImplementation(mSetting, (IMP)hook_alwaysTrue);
+
+            Method mLimitSize = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoSize"));
+            if (mLimitSize) method_setImplementation(mLimitSize, (IMP)hook_maxOriginalLimit);
+
+            Method mLimitDim = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoDimension"));
+            if (mLimitDim) method_setImplementation(mLimitDim, (IMP)hook_maxOriginalLimit);
+
+            Method mRemHD = class_getInstanceMethod(zSharedCls, sel_registerName("enableRememberHD"));
+            if (mRemHD) method_setImplementation(mRemHD, (IMP)hook_alwaysTrue);
+        }
+
+        // Hook ZAChatSendingManager: Gửi tin nhắn tự động kèm TTL và tự động gửi ảnh Original
+        Class sendMgrCls = objc_getClass("ZAChatSendingManager");
+        if (sendMgrCls) {
+            Method m1 = class_getInstanceMethod(sendMgrCls, sel_registerName("sendChat:checkUpload:"));
+            if (m1) {
+                IMP orig = method_getImplementation(m1);
+                class_addMethod(sendMgrCls, sel_registerName("zaloMod_orig_sendChat_checkUpload:"), orig, method_getTypeEncoding(m1));
+                method_setImplementation(m1, (IMP)hook_sendChat_checkUpload);
+            }
+            Method m2 = class_getInstanceMethod(sendMgrCls, sel_registerName("sendChat:toDestinations:checkUpload:isWaitingSend:"));
+            if (m2) {
+                IMP orig = method_getImplementation(m2);
+                class_addMethod(sendMgrCls, sel_registerName("zaloMod_orig_sendChat_destinations:"), orig, method_getTypeEncoding(m2));
+                method_setImplementation(m2, (IMP)hook_sendChat_destinations);
+            }
+            NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager tự động gửi ảnh Original thành công!");
+        }
+
+        // Hook RichMessageContent: Gán cờ Original/PhotoHD cho ảnh gửi đi
+        Class richContentCls = objc_getClass("RichMessageContent");
+        if (richContentCls) {
+            Method mOrig = class_getInstanceMethod(richContentCls, sel_registerName("isOriginal"));
+            if (mOrig) {
+                IMP orig = method_getImplementation(mOrig);
+                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isOriginal:"), orig, method_getTypeEncoding(mOrig));
+                method_setImplementation(mOrig, (IMP)hook_RichMessageContent_isOriginal);
+            }
+            Method mHD = class_getInstanceMethod(richContentCls, sel_registerName("isPhotoHD"));
+            if (mHD) {
+                IMP orig = method_getImplementation(mHD);
+                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isPhotoHD:"), orig, method_getTypeEncoding(mHD));
+                method_setImplementation(mHD, (IMP)hook_RichMessageContent_isPhotoHD);
+            }
         }
 
         // 4. Hook Native Business Account (ProfileEntity, BuddyEntity, BALabelInfo, FlowManagers)
@@ -533,12 +750,58 @@ static void installAllZaloModHooks(void) {
         if (profEntityCls) {
             Method m = class_getInstanceMethod(profEntityCls, sel_registerName("isBusinessAccount"));
             if (m) method_setImplementation(m, (IMP)hook_alwaysTrue);
+
+            Method mZStyle = class_getInstanceMethod(profEntityCls, sel_registerName("isZStyle"));
+            if (mZStyle) method_setImplementation(mZStyle, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mZUser = class_getInstanceMethod(profEntityCls, sel_registerName("isZStyleUser"));
+            if (mZUser) method_setImplementation(mZUser, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPaid = class_getInstanceMethod(profEntityCls, sel_registerName("isPaidZStyle"));
+            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPkg = class_getInstanceMethod(profEntityCls, sel_registerName("zstylePackageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+
+            Method mPkgIvar = class_getInstanceMethod(profEntityCls, sel_registerName("_zstylePackageId"));
+            if (mPkgIvar) method_setImplementation(mPkgIvar, (IMP)hook_zstylePackageIdVIP);
+
+            Method mInfo = class_getInstanceMethod(profEntityCls, sel_registerName("_zstyleInfo"));
+            if (mInfo) method_setImplementation(mInfo, (IMP)hook_BuddyEntity_zstyleInfo);
+
+            Method mInfo2 = class_getInstanceMethod(profEntityCls, sel_registerName("zstyleInfo"));
+            if (mInfo2) method_setImplementation(mInfo2, (IMP)hook_BuddyEntity_zstyleInfo);
         }
 
         Class buddyEntityCls = objc_getClass("BuddyEntity");
         if (buddyEntityCls) {
             Method m = class_getInstanceMethod(buddyEntityCls, sel_registerName("isBusinessAccount"));
             if (m) method_setImplementation(m, (IMP)hook_alwaysTrue);
+
+            Method mZStyle = class_getInstanceMethod(buddyEntityCls, sel_registerName("isZStyle"));
+            if (mZStyle) method_setImplementation(mZStyle, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mZUser = class_getInstanceMethod(buddyEntityCls, sel_registerName("isZStyleUser"));
+            if (mZUser) method_setImplementation(mZUser, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPaid = class_getInstanceMethod(buddyEntityCls, sel_registerName("isPaidZStyle"));
+            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPkg = class_getInstanceMethod(buddyEntityCls, sel_registerName("zstylePackageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+
+            Method mPkgIvar = class_getInstanceMethod(buddyEntityCls, sel_registerName("_zstylePackageId"));
+            if (mPkgIvar) method_setImplementation(mPkgIvar, (IMP)hook_zstylePackageIdVIP);
+
+            Method mInfo = class_getInstanceMethod(buddyEntityCls, sel_registerName("_zstyleInfo"));
+            if (mInfo) {
+                IMP orig = method_getImplementation(mInfo);
+                class_addMethod(buddyEntityCls, sel_registerName("zaloMod_orig_zstyleInfo"), orig, method_getTypeEncoding(mInfo));
+                method_setImplementation(mInfo, (IMP)hook_BuddyEntity_zstyleInfo);
+            }
+
+            Method mInfo2 = class_getInstanceMethod(buddyEntityCls, sel_registerName("zstyleInfo"));
+            if (mInfo2) method_setImplementation(mInfo2, (IMP)hook_BuddyEntity_zstyleInfo);
         }
 
         Class profFlowCls = objc_getClass("ProfileFlowManager");
@@ -586,7 +849,85 @@ static void installAllZaloModHooks(void) {
                 class_addMethod(metaCls, sel_registerName("zaloMod_orig_getZStylePackageId:"), orig, method_getTypeEncoding(mPkg));
                 method_setImplementation(mPkg, (IMP)hook_getZStylePackageId);
             }
+            Method mDict = class_getClassMethod(legacyUtilsCls, sel_registerName("getZStyleDictOfUser:"));
+            if (mDict && metaCls) {
+                IMP orig = method_getImplementation(mDict);
+                class_addMethod(metaCls, sel_registerName("zaloMod_orig_getZStyleDictOfUser:"), orig, method_getTypeEncoding(mDict));
+                method_setImplementation(mDict, (IMP)hook_getZStyleDictOfUser);
+            }
+            Method mSub2 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isSubscribeZStyle:"));
+            if (mSub2) method_setImplementation(mSub2, (IMP)hook_isZStyleSubscribed);
+
+            Method mSub3 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isZStyleSubscribed:"));
+            if (mSub3) method_setImplementation(mSub3, (IMP)hook_isZStyleSubscribed);
+
+            Method mPkg2 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_getZStylePackageId:"));
+            if (mPkg2) method_setImplementation(mPkg2, (IMP)hook_getZStylePackageId);
+
+            Method mFrame = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isEnabledZStyleAvatarFrame"));
+            if (mFrame) method_setImplementation(mFrame, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mFrameType = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isEnabledFrameTypeForProfileUIType:"));
+            if (mFrameType) method_setImplementation(mFrameType, (IMP)hook_zstyleAlwaysTrue);
+
             NSLog(@"[DucLamXNgBao] Hook ProfileLegacyUtils ZStyle thành công!");
+        }
+
+        // Hook ProfileCombineTypeImpl: Khẳng định profile có package zStyle 1
+        Class combineTypeCls = objc_getClass("_TtC9ProfileUI22ProfileCombineTypeImpl") ?: objc_getClass("ProfileCombineTypeImpl");
+        if (combineTypeCls) {
+            Method mPkg = class_getInstanceMethod(combineTypeCls, sel_registerName("zstylePackageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+
+            Method mBiz = class_getInstanceMethod(combineTypeCls, sel_registerName("zbizPackageId"));
+            if (mBiz) method_setImplementation(mBiz, (IMP)hook_zstylePackageIdVIP);
+        }
+
+        // Hook StickersBottomSheetPackInfo: Mở khóa mua tất cả frame/sticker/theme ZStyle
+        Class stickerPackCls = objc_getClass("_TtC19CommFeatureBusiness27StickersBottomSheetPackInfo") ?: objc_getClass("StickersBottomSheetPackInfo");
+        if (stickerPackCls) {
+            Method mPaid = class_getInstanceMethod(stickerPackCls, sel_registerName("isPaidZStyle"));
+            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mOwned = class_getInstanceMethod(stickerPackCls, sel_registerName("isOwned"));
+            if (mOwned) method_setImplementation(mOwned, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPurchased = class_getInstanceMethod(stickerPackCls, sel_registerName("isPurchased"));
+            if (mPurchased) method_setImplementation(mPurchased, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mZUser = class_getInstanceMethod(stickerPackCls, sel_registerName("isZStyleUser"));
+            if (mZUser) method_setImplementation(mZUser, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mFree = class_getInstanceMethod(stickerPackCls, sel_registerName("isfree"));
+            if (mFree) method_setImplementation(mFree, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("price"));
+            if (mPrice) method_setImplementation(mPrice, (IMP)hook_zeroPrice);
+
+            Method mZPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("zStylePrice"));
+            if (mZPrice) method_setImplementation(mZPrice, (IMP)hook_zeroPrice);
+
+            Method mOrigPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("originalPrice"));
+            if (mOrigPrice) method_setImplementation(mOrigPrice, (IMP)hook_zeroPrice);
+        }
+
+        // Hook ProfileMusicDisplayDecision & ProfileMusicPillContext: Luôn hiển thị nhạc nền Pill Player
+        Class musicDecisionCls = objc_getClass("_TtC12ProfileMusic27ProfileMusicDisplayDecision") ?: objc_getClass("ProfileMusicDisplayDecision");
+        if (musicDecisionCls) {
+            Method mV = class_getInstanceMethod(musicDecisionCls, sel_registerName("isViewerZStyle"));
+            if (mV) method_setImplementation(mV, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mUI = class_getInstanceMethod(musicDecisionCls, sel_registerName("isZStyleProfileUI"));
+            if (mUI) method_setImplementation(mUI, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        Class musicPillCtxCls = objc_getClass("_TtC12ProfileMusic23ProfileMusicPillContext") ?: objc_getClass("ProfileMusicPillContext");
+        if (musicPillCtxCls) {
+            Method mV = class_getInstanceMethod(musicPillCtxCls, sel_registerName("isViewerZStyle"));
+            if (mV) method_setImplementation(mV, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mUI = class_getInstanceMethod(musicPillCtxCls, sel_registerName("isZStyleProfileUI"));
+            if (mUI) method_setImplementation(mUI, (IMP)hook_zstyleAlwaysTrue);
         }
 
         Class socialSettingCls = objc_getClass("SocialFeatureSetting");
@@ -631,15 +972,8 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Hook ProfileMusicOverlay Pill Player thành công!");
         }
 
-        Class buddyCls = objc_getClass("BuddyEntity");
-        if (buddyCls) {
-            Method mInfo = class_getInstanceMethod(buddyCls, sel_registerName("_zstyleInfo"));
-            if (mInfo) {
-                IMP orig = method_getImplementation(mInfo);
-                class_addMethod(buddyCls, sel_registerName("zaloMod_orig_zstyleInfo"), orig, method_getTypeEncoding(mInfo));
-                method_setImplementation(mInfo, (IMP)hook_BuddyEntity_zstyleInfo);
-            }
-        }
+        // Swizzle NSUserDefaults objectForKey: để trả về VIP ZStyle Info khi app kiểm tra
+        swizzleInstanceMethod([NSUserDefaults class], @selector(objectForKey:), @selector(zaloMod_objectForKey:));
 
         // 5. Hook TTL vào ChatDataManager, ChatEntity & NSJSONSerialization (Chuẩn Milliseconds)
         Class chatDataMgrCls = objc_getClass("ChatDataManager");
