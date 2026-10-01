@@ -162,6 +162,17 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self setupMainContainer];
     [self setupTabs];
     [self switchTab:0];
+
+    UITapGestureRecognizer *tapBg = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleTapBackground:)];
+    tapBg.cancelsTouchesInView = NO;
+    [self.view addGestureRecognizer:tapBg];
+}
+
+- (void)handleTapBackground:(UITapGestureRecognizer *)g {
+    CGPoint pt = [g locationInView:self.view];
+    if (!CGRectContainsPoint(self.menuBox.frame, pt)) {
+        [self dismissMenu];
+    }
 }
 
 - (void)setupMainContainer {
@@ -951,9 +962,19 @@ static ZaloModViewController *_sharedMenuVC = nil;
 }
 
 - (void)showMenuFromViewController:(UIViewController *)parentVC {
+    if (self.presentingViewController) {
+        return; // Đang hiển thị rồi, không present đè!
+    }
+    UIViewController *topVC = parentVC;
+    while (topVC.presentedViewController) {
+        topVC = topVC.presentedViewController;
+    }
+    if (topVC.isBeingPresented || topVC.isBeingDismissed) {
+        return;
+    }
     self.modalPresentationStyle = UIModalPresentationOverFullScreen;
     self.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
-    [parentVC presentViewController:self animated:YES completion:nil];
+    [topVC presentViewController:self animated:YES completion:nil];
 }
 
 - (void)dismissMenu {
