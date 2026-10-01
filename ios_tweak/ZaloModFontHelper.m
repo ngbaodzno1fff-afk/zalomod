@@ -14,7 +14,7 @@
     }
 
     if ([style isEqualToString:@"Random"]) {
-        NSArray *allStyles = @[@"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant", @"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
+        NSArray *allStyles = @[@"Chữ To", @"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant", @"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
         NSMutableString *res = [NSMutableString string];
         for (NSUInteger i = 0; i < text.length; i++) {
             NSString *ch = [text substringWithRange:NSMakeRange(i, 1)];
@@ -35,6 +35,15 @@
 + (NSString *)convertSingleChar:(NSString *)ch inStyle:(NSString *)style {
     if (ch.length != 1) return ch;
     unichar c = [ch characterAtIndex:0];
+
+    // Chữ To (Bold Sans-Serif Capitals & Fullwidth)
+    if ([style isEqualToString:@"Chữ To"]) {
+        if (c >= 'A' && c <= 'Z') return [self surrogatePairForCodePoint:0x1D5D4 + (c - 'A')];
+        if (c >= 'a' && c <= 'z') return [self surrogatePairForCodePoint:0x1D5D4 + (c - 'a')];
+        if (c >= '0' && c <= '9') return [self surrogatePairForCodePoint:0x1D7EC + (c - '0')];
+        if (c == ' ') return @" ";
+        return ch;
+    }
 
     // Pixel (Fullwidth)
     if ([style isEqualToString:@"Pixel"]) {
