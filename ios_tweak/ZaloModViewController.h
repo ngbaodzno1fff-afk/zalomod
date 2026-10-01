@@ -21,6 +21,8 @@
 + (BOOL)isAntiUndoEnabled;
 + (NSInteger)customTTLSeconds;
 + (long long)customTTLMilliseconds;
++ (CGFloat)customFontSize;
++ (void)setCustomFontSize:(CGFloat)size;
 + (BOOL)isGhostSeenEnabled;
 + (BOOL)isHideTypingEnabled;
 + (BOOL)isBugOriginalEnabled;
