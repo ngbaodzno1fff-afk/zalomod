@@ -13,8 +13,8 @@
         return text;
     }
 
-    if ([style isEqualToString:@"Random"]) {
-        NSArray *allStyles = @[@"Chữ To", @"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant", @"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
+    if ([style isEqualToString:@"Random"] || [style isEqualToString:@"Random Màu Font"]) {
+        NSArray *allStyles = @[@"Chữ To", @"Chữ Đỏ", @"Chữ Xanh", @"Khối Đen", @"Khoanh Tròn", @"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant", @"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
         NSMutableString *res = [NSMutableString string];
         for (NSUInteger i = 0; i < text.length; i++) {
             NSString *ch = [text substringWithRange:NSMakeRange(i, 1)];
@@ -41,6 +41,43 @@
         if (c >= 'A' && c <= 'Z') return [self surrogatePairForCodePoint:0x1D5D4 + (c - 'A')];
         if (c >= 'a' && c <= 'z') return [self surrogatePairForCodePoint:0x1D5D4 + (c - 'a')];
         if (c >= '0' && c <= '9') return [self surrogatePairForCodePoint:0x1D7EC + (c - '0')];
+        if (c == ' ') return @" ";
+        return ch;
+    }
+
+    // Chữ Đỏ (Negative Squared Latin - Hộp Đỏ Nổi Bật)
+    if ([style isEqualToString:@"Chữ Đỏ"]) {
+        if (c >= 'A' && c <= 'Z') return [self surrogatePairForCodePoint:0x1F170 + (c - 'A')];
+        if (c >= 'a' && c <= 'z') return [self surrogatePairForCodePoint:0x1F170 + (c - 'a')];
+        if (c >= '0' && c <= '9') return [self surrogatePairForCodePoint:0x1D7EC + (c - '0')];
+        if (c == ' ') return @" ";
+        return ch;
+    }
+
+    // Chữ Xanh (Regional Indicator Symbol - Khối Xanh Lam)
+    if ([style isEqualToString:@"Chữ Xanh"]) {
+        if (c >= 'A' && c <= 'Z') return [self surrogatePairForCodePoint:0x1F1E6 + (c - 'A')];
+        if (c >= 'a' && c <= 'z') return [self surrogatePairForCodePoint:0x1F1E6 + (c - 'a')];
+        if (c >= '0' && c <= '9') return [self surrogatePairForCodePoint:0x1D7EC + (c - '0')];
+        if (c == ' ') return @" ";
+        return ch;
+    }
+
+    // Khối Đen (Negative Circled Latin - Nút Tròn Đen)
+    if ([style isEqualToString:@"Khối Đen"]) {
+        if (c >= 'A' && c <= 'Z') return [self surrogatePairForCodePoint:0x1F150 + (c - 'A')];
+        if (c >= 'a' && c <= 'z') return [self surrogatePairForCodePoint:0x1F150 + (c - 'a')];
+        if (c >= '0' && c <= '9') return [NSString stringWithFormat:@"%C", (unichar)(0x2776 + (c - '1'))];
+        if (c == ' ') return @" ";
+        return ch;
+    }
+
+    // Khoanh Tròn (Circled Latin)
+    if ([style isEqualToString:@"Khoanh Tròn"]) {
+        if (c >= 'A' && c <= 'Z') return [NSString stringWithFormat:@"%C", (unichar)(0x24B6 + (c - 'A'))];
+        if (c >= 'a' && c <= 'z') return [NSString stringWithFormat:@"%C", (unichar)(0x24D0 + (c - 'a'))];
+        if (c >= '1' && c <= '9') return [NSString stringWithFormat:@"%C", (unichar)(0x2460 + (c - '1'))];
+        if (c == '0') return @"⓪";
         if (c == ' ') return @" ";
         return ch;
     }
