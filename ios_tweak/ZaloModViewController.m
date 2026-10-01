@@ -16,8 +16,9 @@ static NSString * const kPrefHideTyping     = @"ZaloMod_HideTyping";
 static NSString * const kPrefBugOriginal    = @"ZaloMod_BugOriginal";
 static NSString * const kPrefBugZBusiness   = @"ZaloMod_BugZBusiness";
 static NSString * const kPrefBugZLStyle     = @"ZaloMod_BugZLStyle";
-static NSString * const kPrefSelectedFont   = @"ZaloMod_SelectedFont";
-static NSString * const kPrefCustomFontSize = @"ZaloMod_CustomFontSize";
+static NSString * const kPrefSelectedFont       = @"ZaloMod_SelectedFont";
+static NSString * const kPrefCustomFontSize     = @"ZaloMod_CustomFontSize";
+static NSString * const kPrefSelectedTextColor  = @"ZaloMod_SelectedTextColor";
 
 @interface ZaloModViewController () <UITextFieldDelegate>
 
@@ -39,6 +40,8 @@ static NSString * const kPrefCustomFontSize = @"ZaloMod_CustomFontSize";
 @property (nonatomic, strong) UILabel *lblTTLSummary;
 @property (nonatomic, strong) UILabel *lblCurrentFont;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *fontButtons;
+@property (nonatomic, strong) UILabel *lblCurrentTextColor;
+@property (nonatomic, strong) NSMutableArray<UIButton *> *colorButtons;
 @property (nonatomic, strong) UISegmentedControl *fontSizeSegment;
 @property (nonatomic, strong) UITextField *txtFontSize;
 @property (nonatomic, strong) UILabel *lblFontSizeSummary;
@@ -94,6 +97,40 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
++ (NSString *)selectedTextColorName {
+    return [[NSUserDefaults standardUserDefaults] stringForKey:kPrefSelectedTextColor] ?: @"Mặc định";
+}
+
++ (void)setSelectedTextColorName:(NSString *)name {
+    [[NSUserDefaults standardUserDefaults] setObject:name forKey:kPrefSelectedTextColor];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
++ (UIColor *)selectedTextColor {
+    NSString *name = [self selectedTextColorName];
+    if ([name isEqualToString:@"Đỏ"]) return [UIColor colorWithRed:1.0 green:0.25 blue:0.25 alpha:1.0];
+    if ([name isEqualToString:@"Xanh Lá"]) return [UIColor colorWithRed:0.2 green:0.95 blue:0.4 alpha:1.0];
+    if ([name isEqualToString:@"Xanh Dương"]) return [UIColor colorWithRed:0.2 green:0.65 blue:1.0 alpha:1.0];
+    if ([name isEqualToString:@"Vàng"]) return [UIColor colorWithRed:1.0 green:0.88 blue:0.1 alpha:1.0];
+    if ([name isEqualToString:@"Tím"]) return [UIColor colorWithRed:0.8 green:0.35 blue:1.0 alpha:1.0];
+    if ([name isEqualToString:@"Cam"]) return [UIColor colorWithRed:1.0 green:0.55 blue:0.15 alpha:1.0];
+    if ([name isEqualToString:@"Hồng"]) return [UIColor colorWithRed:1.0 green:0.4 blue:0.75 alpha:1.0];
+    if ([name isEqualToString:@"Random"]) {
+        NSArray *colors = @[
+            [UIColor colorWithRed:1.0 green:0.25 blue:0.25 alpha:1.0],
+            [UIColor colorWithRed:0.2 green:0.95 blue:0.4 alpha:1.0],
+            [UIColor colorWithRed:0.2 green:0.65 blue:1.0 alpha:1.0],
+            [UIColor colorWithRed:1.0 green:0.88 blue:0.1 alpha:1.0],
+            [UIColor colorWithRed:0.8 green:0.35 blue:1.0 alpha:1.0],
+            [UIColor colorWithRed:1.0 green:0.55 blue:0.15 alpha:1.0],
+            [UIColor colorWithRed:1.0 green:0.4 blue:0.75 alpha:1.0],
+            [UIColor colorWithRed:0.1 green:0.95 blue:0.95 alpha:1.0]
+        ];
+        return colors[arc4random_uniform((uint32_t)colors.count)];
+    }
+    return nil;
+}
+
 + (BOOL)isBugZLStyleEnabled {
     id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefBugZLStyle];
     return (val == nil) ? YES : [val boolValue];
@@ -121,6 +158,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [super viewDidLoad];
     self.view.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.5];
     self.fontButtons = [NSMutableArray array];
+    self.colorButtons = [NSMutableArray array];
     [self setupMainContainer];
     [self setupTabs];
     [self switchTab:0];
@@ -302,10 +340,10 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self.tabFontsView addSubview:lblFHeader];
     y += 28;
 
-    NSArray *row1 = @[@"Tắt", @"Chữ To", @"Random", @"Pixel"];
-    NSArray *row2 = @[@"Vintage", @"Florence", @"Notes", @"Elegant"];
-    NSArray *row3 = @[@"Amatic", @"Terminal", @"Retro", @"Young"];
-    NSArray *row4 = @[@"School"];
+    NSArray *row1 = @[@"Tắt", @"Chữ To", @"Chữ Đỏ", @"Chữ Xanh"];
+    NSArray *row2 = @[@"Khối Đen", @"Khoanh Tròn", @"Random Màu Font", @"Pixel"];
+    NSArray *row3 = @[@"Vintage", @"Florence", @"Notes", @"Elegant"];
+    NSArray *row4 = @[@"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
 
     y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 1:" fonts:row1];
     y = [self addFontRowToView:self.tabFontsView y:y label:@"Hàng 2:" fonts:row2];
@@ -318,7 +356,29 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.lblCurrentFont.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
     self.lblCurrentFont.font = [UIFont boldSystemFontOfSize:13.0];
     [self.tabFontsView addSubview:self.lblCurrentFont];
-    y += 36;
+    y += 34;
+
+    // PHẦN BẢNG MÀU CHỮ Ô NHẬP & GÕ PHÍM (ALL MÀU & RANDOM MÀU SẮC)
+    UILabel *lblColorHeader = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 22)];
+    lblColorHeader.text = @"🎨 Bảng Màu Chữ Ô Nhập (All Màu Sắc & Random):";
+    lblColorHeader.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.8 alpha:1.0]; // Pink/Magenta
+    lblColorHeader.font = [UIFont boldSystemFontOfSize:12.5];
+    [self.tabFontsView addSubview:lblColorHeader];
+    y += 26;
+
+    NSArray *colorsRow1 = @[@"Trắng", @"Đỏ", @"Xanh Lá", @"Xanh Dương"];
+    NSArray *colorsRow2 = @[@"Vàng", @"Tím", @"Cam", @"Hồng", @"Random"];
+
+    y = [self addColorRowToView:self.tabFontsView y:y label:@"Màu 1:" colors:colorsRow1];
+    y = [self addColorRowToView:self.tabFontsView y:y label:@"Màu 2:" colors:colorsRow2];
+
+    NSString *savedColor = [ZaloModViewController selectedTextColorName];
+    self.lblCurrentTextColor = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 24)];
+    self.lblCurrentTextColor.text = [NSString stringWithFormat:@"🎨 Đang chọn màu chữ: %@", savedColor];
+    self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
+    self.lblCurrentTextColor.font = [UIFont boldSystemFontOfSize:13.0];
+    [self.tabFontsView addSubview:self.lblCurrentTextColor];
+    y += 34;
 
     // PHẦN CHỈNH SIZE CHỮ Ô NHẬP TIN NHẮN (CHỮ TO)
     UILabel *lblSizeHeader = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 22)];
@@ -526,6 +586,74 @@ static ZaloModViewController *_sharedMenuVC = nil;
     }
     self.lblCurrentFont.text = [NSString stringWithFormat:@"Đang chọn Font: %@", fn];
     [self showToast:[NSString stringWithFormat:@"🔤 Đã chọn Font: %@", fn]];
+}
+
+- (CGFloat)addColorRowToView:(UIView *)parent y:(CGFloat)y label:(NSString *)lblText colors:(NSArray<NSString *> *)colors {
+    CGFloat contentW = parent.bounds.size.width;
+    CGFloat startX = 14.0;
+    CGFloat availableW = contentW - 28.0;
+    CGFloat btnW = (availableW - (colors.count - 1) * 6.0) / (CGFloat)colors.count;
+    CGFloat btnH = 32.0;
+
+    NSString *savedColor = [ZaloModViewController selectedTextColorName];
+
+    for (NSUInteger i = 0; i < colors.count; i++) {
+        NSString *colName = colors[i];
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.frame = CGRectMake(startX + i * (btnW + 6.0), y, btnW, btnH);
+        btn.titleLabel.font = [UIFont boldSystemFontOfSize:11.0];
+        btn.layer.cornerRadius = 6.0;
+        btn.layer.borderWidth = 1.0;
+
+        UIColor *boxColor = [UIColor whiteColor];
+        if ([colName isEqualToString:@"Đỏ"]) boxColor = [UIColor colorWithRed:1.0 green:0.25 blue:0.25 alpha:1.0];
+        else if ([colName isEqualToString:@"Xanh Lá"]) boxColor = [UIColor colorWithRed:0.2 green:0.95 blue:0.4 alpha:1.0];
+        else if ([colName isEqualToString:@"Xanh Dương"]) boxColor = [UIColor colorWithRed:0.2 green:0.65 blue:1.0 alpha:1.0];
+        else if ([colName isEqualToString:@"Vàng"]) boxColor = [UIColor colorWithRed:1.0 green:0.88 blue:0.1 alpha:1.0];
+        else if ([colName isEqualToString:@"Tím"]) boxColor = [UIColor colorWithRed:0.8 green:0.35 blue:1.0 alpha:1.0];
+        else if ([colName isEqualToString:@"Cam"]) boxColor = [UIColor colorWithRed:1.0 green:0.55 blue:0.15 alpha:1.0];
+        else if ([colName isEqualToString:@"Hồng"]) boxColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.75 alpha:1.0];
+        else if ([colName isEqualToString:@"Random"]) boxColor = [UIColor colorWithRed:0.2 green:0.9 blue:1.0 alpha:1.0];
+
+        [btn setTitle:colName forState:UIControlStateNormal];
+        [btn setTitleColor:boxColor forState:UIControlStateNormal];
+
+        if ([colName isEqualToString:savedColor]) {
+            btn.backgroundColor = [boxColor colorWithAlphaComponent:0.3];
+            btn.layer.borderColor = boxColor.CGColor;
+            btn.layer.borderWidth = 2.0;
+        } else {
+            btn.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
+            btn.layer.borderColor = [boxColor colorWithAlphaComponent:0.45].CGColor;
+            btn.layer.borderWidth = 1.0;
+        }
+
+        [btn addTarget:self action:@selector(colorButtonClicked:) forControlEvents:UIControlEventTouchUpInside];
+        [parent addSubview:btn];
+        [self.colorButtons addObject:btn];
+    }
+    return y + btnH + 8.0;
+}
+
+- (void)colorButtonClicked:(UIButton *)sender {
+    NSString *colName = sender.currentTitle;
+    [ZaloModViewController setSelectedTextColorName:colName];
+    self.lblCurrentTextColor.text = [NSString stringWithFormat:@"🎨 Đang chọn màu chữ: %@", colName];
+    self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
+
+    for (UIButton *b in self.colorButtons) {
+        UIColor *boxColor = [b titleColorForState:UIControlStateNormal];
+        if ([b.currentTitle isEqualToString:colName]) {
+            b.backgroundColor = [boxColor colorWithAlphaComponent:0.3];
+            b.layer.borderColor = boxColor.CGColor;
+            b.layer.borderWidth = 2.0;
+        } else {
+            b.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.4];
+            b.layer.borderColor = [boxColor colorWithAlphaComponent:0.45].CGColor;
+            b.layer.borderWidth = 1.0;
+        }
+    }
+    [self showToast:[NSString stringWithFormat:@"🎨 Đã chọn màu chữ: %@", colName]];
 }
 
 - (CGFloat)addSwitchRowToView:(UIView *)parent y:(CGFloat)y title:(NSString *)title subtitle:(NSString *)sub initial:(BOOL)val action:(SEL)act {
