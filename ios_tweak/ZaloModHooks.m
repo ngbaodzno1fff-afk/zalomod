@@ -172,90 +172,15 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 @end
 
 // =========================================================================
-// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - LƯU VÀ HIỂN THỊ NỘI DUNG GỐC
+// 4. CHỐNG THU HỒI TIN NHẮN (ANTI-UNDO) - KHÔNG PHÁ HỎNG BONG BÓNG CHAT
 // =========================================================================
-static NSMutableDictionary<NSString *, NSString *> *gMessageCache = nil;
-static dispatch_queue_t gCacheQueue = nil;
-
-@interface NSObject (ZaloChatEntityHook)
-- (id)messageKey;
-- (id)messageId;
-- (id)getMessageKey;
-- (NSString *)_originTextRecallMsg;
-- (void)set_originTextRecallMsg:(NSString *)text;
-- (long long)ttl;
-- (void)setTtl:(long long)ttl;
-- (void)setIsOriginal:(int)val;
-- (void)setIsPhotoHD:(int)val;
-@end
-
-static void hook_ChatEntity_setMessage(id self, SEL _cmd, NSString *msg) {
-    if (msg && msg.length > 0) {
-        NSString *key = nil;
-        if ([self respondsToSelector:@selector(getMessageKey)]) {
-            key = [self performSelector:@selector(getMessageKey)];
-        }
-        if (!key && [self respondsToSelector:@selector(messageId)]) {
-            key = [self performSelector:@selector(messageId)];
-        }
-
-        BOOL isRecallMsg = [msg containsString:@"Tin nhắn đã được thu hồi"] ||
-                           [msg containsString:@"Message recalled"] ||
-                           [msg containsString:@"đã thu hồi một tin nhắn"] ||
-                           [msg containsString:@"đã thu hồi"];
-
-        if (!isRecallMsg) {
-            // Lưu nội dung tin nhắn thật vào bộ nhớ đệm
-            if (key) {
-                dispatch_barrier_async(gCacheQueue, ^{
-                    gMessageCache[key] = msg;
-                });
-            }
-        } else if ([ZaloModViewController isAntiUndoEnabled]) {
-            // Khi đối phương bấm Thu hồi, lấy lại nội dung thật đã lưu!
-            __block NSString *originalText = nil;
-            if (key) {
-                dispatch_sync(gCacheQueue, ^{
-                    originalText = gMessageCache[key];
-                });
-            }
-            if (!originalText && [self respondsToSelector:@selector(_originTextRecallMsg)]) {
-                originalText = [self _originTextRecallMsg];
-            }
-
-            if (originalText && originalText.length > 0 && ![originalText containsString:@"Tin nhắn đã được thu hồi"]) {
-                msg = [NSString stringWithFormat:@"%@\n(🚫 Đã thu hồi)", originalText];
-            } else {
-                msg = @"[🚫 Đã thu hồi một tin nhắn]";
-            }
-
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [[ZaloFloatingButton sharedInstance] incrementBadge];
-            });
-        }
-    }
-
-    void (*orig)(id, SEL, NSString *) = (void (*)(id, SEL, NSString *))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_setMessage:"));
-    if (orig) {
-        orig(self, _cmd, msg);
-    }
-}
-
-static BOOL hook_ChatEntity_isMessageUndoOrDelete(id self, SEL _cmd) {
-    if ([ZaloModViewController isAntiUndoEnabled]) {
-        // Trả về NO để Zalo KHÔNG ẩn bubble và KHÔNG xóa nội dung tin nhắn!
-        return NO;
-    }
-    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isMessageUndoOrDelete:"));
-    return orig ? orig(self, _cmd) : NO;
-}
-
 static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id item) {
     if ([ZaloModViewController isAntiUndoEnabled]) {
-        NSLog(@"[DucLamXNgBao] Đã chặn xóa tin nhắn từ lệnh thu hồi của Server!");
+        NSLog(@"[DucLamXNgBao Anti-Undo] Đã chặn lệnh thu hồi tin nhắn từ Server!");
         dispatch_async(dispatch_get_main_queue(), ^{
             [[ZaloFloatingButton sharedInstance] incrementBadge];
         });
+        return; // KHÔNG THỰC THI LỆNH XÓA/THU HỒI -> Tin nhắn được giữ nguyên vẹn 100%!
     }
     void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUndoMessage:"));
     if (orig) {
@@ -263,7 +188,17 @@ static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id
     }
 }
 
-// Hook hiển thị nhãn thu hồi trên UI
+static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id chat) {
+    if ([ZaloModViewController isAntiUndoEnabled]) {
+        return; // Chặn cập nhật trạng thái xóa vào ChatEntity!
+    }
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processUpdateUndo:"));
+    if (orig) {
+        orig(self, _cmd, chat);
+    }
+}
+
+// Hook hiển thị nhãn thu hồi trên UI (an toàn, không đụng vào CoreText calculation)
 @interface UILabel (ZaloModAntiUndo)
 @end
 
@@ -271,7 +206,7 @@ static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id
 - (void)zaloMod_setText:(NSString *)text {
     if ([ZaloModViewController isAntiUndoEnabled] && text && text.length > 0) {
         if ([text containsString:@"Tin nhắn đã được thu hồi"] || [text containsString:@"Message recalled"]) {
-            text = @"[🚫 Đã thu hồi]";
+            text = [NSString stringWithFormat:@"%@ ( đã chặn thu hồi )", text];
             dispatch_async(dispatch_get_main_queue(), ^{
                 [[ZaloFloatingButton sharedInstance] incrementBadge];
             });
@@ -282,125 +217,23 @@ static void hook_ChatOperationProcessor_processUndoMessage(id self, SEL _cmd, id
 @end
 
 // =========================================================================
-// 5. MỞ KHÓA GỬI ẢNH GỐC (ORIGINAL) & BẬT CHẾ ĐỘ RAW HD KHÔNG CẦN ZCLOUD
+// 5. MỞ KHÓA GỬI ẢNH GỐC & HD (KHÔNG BỊ BẮT MUA ZCLOUD)
 // =========================================================================
-// Hook QualityPickerViewController (Bottom sheet chọn chế độ gửi: Original, HD, Tiêu chuẩn)
+// Hook QualityPickerViewController (Bảng chọn chế độ gửi ảnh)
 static BOOL hook_enableShowOriginPhoto(id self, SEL _cmd) {
-    return YES; // Cho phép chọn Original luôn luôn!
+    return YES; // Cho phép hiển thị nút Original!
 }
 
 static NSInteger hook_originalBadgeType(id self, SEL _cmd) {
-    return 0; // Xóa bỏ yêu cầu trả phí zCloud!
+    return 0; // Bỏ huy hiệu khóa zCloud!
 }
 
 static id hook_originalBadge(id self, SEL _cmd) {
-    return nil; // Xóa chữ "zCloud" bên cạnh nhãn Original!
-}
-
-// Hook RichMessageContent (Ép gửi ảnh ở độ nét Gốc & HD)
-static BOOL hook_RichMessageContent_isOriginal(id self, SEL _cmd) {
-    if ([ZaloModViewController isBugOriginalEnabled]) {
-        return YES;
-    }
-    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("RichMessageContent"), sel_registerName("zaloMod_orig_isOriginal:"));
-    return orig ? orig(self, _cmd) : NO;
-}
-
-static BOOL hook_RichMessageContent_isPhotoHD(id self, SEL _cmd) {
-    if ([ZaloModViewController isBugOriginalEnabled]) {
-        return YES;
-    }
-    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("RichMessageContent"), sel_registerName("zaloMod_orig_isPhotoHD:"));
-    return orig ? orig(self, _cmd) : NO;
+    return nil; // Xóa chữ zCloud!
 }
 
 // =========================================================================
-// 6. GỬI TIN NHẮN TỰ XÓA TTL (TIME-TO-LIVE) & TỰ ĐỘNG GẮN GỬI ẢNH GỐC
-// =========================================================================
-static void hook_sendChat_checkUpload(id self, SEL _cmd, id chat, BOOL check) {
-    // 1. Gán TTL nếu bật tính năng
-    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0 && [chat respondsToSelector:@selector(setTtl:)]) {
-        [chat setTtl:(long long)ttlSecs];
-        NSLog(@"[DucLamXNgBao] Đã gán TTL: %ld giây vào tin nhắn!", (long)ttlSecs);
-    }
-
-    // 2. Ép gửi Original nếu bật tính năng
-    if ([ZaloModViewController isBugOriginalEnabled]) {
-        if ([chat respondsToSelector:@selector(setIsOriginal:)]) {
-            [chat setIsOriginal:1];
-        }
-        if ([chat respondsToSelector:@selector(setIsPhotoHD:)]) {
-            [chat setIsPhotoHD:1];
-        }
-    }
-
-    void (*orig)(id, SEL, id, BOOL) = (void (*)(id, SEL, id, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_checkUpload:"));
-    if (orig) orig(self, _cmd, chat, check);
-}
-
-static void hook_sendChat_destinations(id self, SEL _cmd, id chat, id dests, BOOL check, BOOL wait) {
-    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0 && [chat respondsToSelector:@selector(setTtl:)]) {
-        [chat setTtl:(long long)ttlSecs];
-        NSLog(@"[DucLamXNgBao] Đã gán TTL: %ld giây vào tin nhắn!", (long)ttlSecs);
-    }
-
-    if ([ZaloModViewController isBugOriginalEnabled]) {
-        if ([chat respondsToSelector:@selector(setIsOriginal:)]) {
-            [chat setIsOriginal:1];
-        }
-        if ([chat respondsToSelector:@selector(setIsPhotoHD:)]) {
-            [chat setIsPhotoHD:1];
-        }
-    }
-
-    void (*orig)(id, SEL, id, id, BOOL, BOOL) = (void (*)(id, SEL, id, id, BOOL, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_destinations:"));
-    if (orig) orig(self, _cmd, chat, dests, check, wait);
-}
-
-// Hook JSON API dự phòng
-@interface NSJSONSerialization (ZaloModHook)
-@end
-
-@implementation NSJSONSerialization (ZaloModHook)
-+ (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
-    if ([obj isKindOfClass:[NSDictionary class]]) {
-        NSMutableDictionary *dict = [obj mutableCopy];
-        BOOL modified = NO;
-
-        if ([ZaloModViewController isBugOriginalEnabled]) {
-            if (dict[@"thumb"] || dict[@"photo"] || dict[@"photo_url"] || dict[@"total_size"] || dict[@"width"] || dict[@"height"] || dict[@"media"]) {
-                dict[@"is_original"] = @(1);
-                if ([dict[@"media"] isKindOfClass:[NSDictionary class]]) {
-                    NSMutableDictionary *media = [dict[@"media"] mutableCopy];
-                    media[@"is_original"] = @(1);
-                    dict[@"media"] = media;
-                }
-                modified = YES;
-            }
-        }
-
-        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-        if (ttlSecs > 0) {
-            if (dict[@"text"] || dict[@"msg"] || dict[@"cmsg"] || dict[@"cmsg_id"] || dict[@"content"] || dict[@"quote"]) {
-                dict[@"ttl"] = @(ttlSecs);
-                dict[@"ttl_sec"] = @(ttlSecs);
-                dict[@"ttl_ms"] = @(ttlSecs * 1000);
-                modified = YES;
-            }
-        }
-
-        if (modified) {
-            return [self zaloMod_dataWithJSONObject:dict options:opt error:error];
-        }
-    }
-    return [self zaloMod_dataWithJSONObject:obj options:opt error:error];
-}
-@end
-
-// =========================================================================
-// 7. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG, KHÔNG ĐÈ CHỮ)
+// 6. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
 // =========================================================================
 static BOOL hook_alwaysTrue(id self, SEL _cmd) {
     return [ZaloModViewController isBugZBusinessEnabled];
@@ -422,7 +255,7 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
     return [ZaloModViewController isBugZBusinessEnabled] ? [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95] : nil;
 }
 
-// Dọn dẹp triệt để các subview fake cũ để không bao giờ bị đè chữ lên Bio/Status hoặc Nhật ký
+// Dọn dẹp triệt để các subview thừa cũ trên UIViewController
 @interface UIViewController (ZaloModCleanupOldViews)
 @end
 
@@ -440,7 +273,7 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
 @end
 
 // =========================================================================
-// 8. SIRIKIT ENTITLEMENT BYPASS (Chống văng app khi Sideload qua ESign/Scarlet)
+// 7. SIRIKIT ENTITLEMENT BYPASS (Chống văng app khi Sideload qua ESign/Scarlet)
 // =========================================================================
 @interface FakeIntentsBypass : NSObject
 + (id)sharedPreferences;
@@ -482,41 +315,18 @@ static void patchSiriKitCrash(void) {
 }
 
 // =========================================================================
-// 9. KÍCH HOẠT TOÀN BỘ HOOKS
+// 8. KÍCH HOẠT TOÀN BỘ HOOKS (AN TOÀN TUYỆT ĐỐI, KHÔNG PHÁ HỎNG GIAO DIỆN CHAT)
 // =========================================================================
 static void installAllZaloModHooks(void) {
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        NSLog(@"[DucLamXNgBao] Đang cài đặt Hook tối ưu cho Zalo Mod VIP...");
+        NSLog(@"[DucLamXNgBao] Đang cài đặt Hook chuẩn xác cho Zalo Mod VIP...");
 
-        // Khởi tạo hàng đợi cache tin nhắn Anti-Undo
-        gMessageCache = [NSMutableDictionary dictionary];
-        gCacheQueue = dispatch_queue_create("com.duclam.zalomod.cacheQueue", DISPATCH_QUEUE_CONCURRENT);
-
-        // 1. Hook Font Chữ
+        // 1. Hook Font Chữ vào ô nhập liệu
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
 
-        // 2. Hook Anti-Undo trên ChatEntity & ChatOperationProcessor
-        Class chatEntityCls = objc_getClass("ChatEntity");
-        if (chatEntityCls) {
-            Method setMsgM = class_getInstanceMethod(chatEntityCls, sel_registerName("setMessage:"));
-            if (setMsgM) {
-                IMP origImp = method_getImplementation(setMsgM);
-                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_setMessage:"), origImp, method_getTypeEncoding(setMsgM));
-                method_setImplementation(setMsgM, (IMP)hook_ChatEntity_setMessage);
-                NSLog(@"[DucLamXNgBao] Hook ChatEntity setMessage: thành công!");
-            }
-
-            Method undoCheckM = class_getInstanceMethod(chatEntityCls, sel_registerName("isMessageUndoOrDelete"));
-            if (undoCheckM) {
-                IMP origImp = method_getImplementation(undoCheckM);
-                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_isMessageUndoOrDelete:"), origImp, method_getTypeEncoding(undoCheckM));
-                method_setImplementation(undoCheckM, (IMP)hook_ChatEntity_isMessageUndoOrDelete);
-                NSLog(@"[DucLamXNgBao] Hook ChatEntity isMessageUndoOrDelete thành công!");
-            }
-        }
-
+        // 2. Hook Anti-Undo trên ChatOperationProcessor (Chặn lệnh xóa từ Server, giữ nguyên tin nhắn thật)
         Class chatOpProcCls = objc_getClass("ChatOperationProcessor");
         if (chatOpProcCls) {
             Method undoProcM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUndoMessageWithOperationItem:"));
@@ -526,31 +336,19 @@ static void installAllZaloModHooks(void) {
                 method_setImplementation(undoProcM, (IMP)hook_ChatOperationProcessor_processUndoMessage);
                 NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUndoMessage thành công!");
             }
+
+            Method updateUndoM = class_getInstanceMethod(chatOpProcCls, sel_registerName("_processUpdateUndoWithChatEntity:"));
+            if (updateUndoM) {
+                IMP origImp = method_getImplementation(updateUndoM);
+                class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUpdateUndo:"), origImp, method_getTypeEncoding(updateUndoM));
+                method_setImplementation(updateUndoM, (IMP)hook_ChatOperationProcessor_processUpdateUndo);
+                NSLog(@"[DucLamXNgBao] Hook ChatOperationProcessor _processUpdateUndo thành công!");
+            }
         }
 
         swizzleInstanceMethod([UILabel class], @selector(setText:), @selector(zaloMod_setText:));
 
-        // 3. Hook TTL vào ZAChatSendingManager
-        Class sendMgrCls = objc_getClass("ZAChatSendingManager");
-        if (sendMgrCls) {
-            Method m1 = class_getInstanceMethod(sendMgrCls, sel_registerName("sendChat:checkUpload:"));
-            if (m1) {
-                IMP orig = method_getImplementation(m1);
-                class_addMethod(sendMgrCls, sel_registerName("zaloMod_orig_sendChat_checkUpload:"), orig, method_getTypeEncoding(m1));
-                method_setImplementation(m1, (IMP)hook_sendChat_checkUpload);
-                NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager sendChat:checkUpload: thành công!");
-            }
-
-            Method m2 = class_getInstanceMethod(sendMgrCls, sel_registerName("sendChat:toDestinations:checkUpload:isWaitingSend:"));
-            if (m2) {
-                IMP orig = method_getImplementation(m2);
-                class_addMethod(sendMgrCls, sel_registerName("zaloMod_orig_sendChat_destinations:"), orig, method_getTypeEncoding(m2));
-                method_setImplementation(m2, (IMP)hook_sendChat_destinations);
-                NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager sendChat:toDestinations:... thành công!");
-            }
-        }
-
-        // 4. Hook Mở khóa Gửi Ảnh Gốc Original (QualityPickerViewController & RichMessageContent)
+        // 3. Mở khóa giao diện chọn ảnh Original (QualityPickerViewController)
         Class pickerVCCls = objc_getClass("_TtC19CommFeatureBusiness27QualityPickerViewController") ?: objc_getClass("QualityPickerViewController");
         if (pickerVCCls) {
             Method mShow = class_getInstanceMethod(pickerVCCls, sel_registerName("enableShowOriginPhoto"));
@@ -565,25 +363,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Đã mở khóa chọn ảnh Original không cần zCloud!");
         }
 
-        Class richContentCls = objc_getClass("RichMessageContent");
-        if (richContentCls) {
-            Method mOrig = class_getInstanceMethod(richContentCls, sel_registerName("isOriginal"));
-            if (mOrig) {
-                IMP orig = method_getImplementation(mOrig);
-                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isOriginal:"), orig, method_getTypeEncoding(mOrig));
-                method_setImplementation(mOrig, (IMP)hook_RichMessageContent_isOriginal);
-            }
-
-            Method mHD = class_getInstanceMethod(richContentCls, sel_registerName("isPhotoHD"));
-            if (mHD) {
-                IMP orig = method_getImplementation(mHD);
-                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isPhotoHD:"), orig, method_getTypeEncoding(mHD));
-                method_setImplementation(mHD, (IMP)hook_RichMessageContent_isPhotoHD);
-            }
-            NSLog(@"[DucLamXNgBao] Hook RichMessageContent isOriginal/isPhotoHD thành công!");
-        }
-
-        // 5. Hook Native Business Account (ProfileEntity, BuddyEntity, BALabelInfo, FlowManagers)
+        // 4. Hook Native Business Account (ProfileEntity, BuddyEntity, BALabelInfo, FlowManagers)
         Class profEntityCls = objc_getClass("ProfileEntity");
         if (profEntityCls) {
             Method m = class_getInstanceMethod(profEntityCls, sel_registerName("isBusinessAccount"));
@@ -625,17 +405,10 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 6. Hook dọn dẹp view cũ trên UIViewController
+        // 5. Dọn dẹp view cũ trên UIViewController
         swizzleInstanceMethod([UIViewController class], @selector(viewDidAppear:), @selector(zaloMod_viewDidAppear:));
 
-        // 7. Hook JSON API
-        Method origJSON = class_getClassMethod([NSJSONSerialization class], @selector(dataWithJSONObject:options:error:));
-        Method swizJSON = class_getClassMethod([NSJSONSerialization class], @selector(zaloMod_dataWithJSONObject:options:error:));
-        if (origJSON && swizJSON) {
-            method_exchangeImplementations(origJSON, swizJSON);
-        }
-
-        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS SIÊU CẤP VIP!");
+        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - SIÊU MƯỢT, TIN NHẮN CHUẨN ĐẸP!");
     });
 }
 
@@ -644,7 +417,7 @@ __attribute__((constructor))
 static void initZaloModVIP(void) {
     patchSiriKitCrash();
 
-    // Kích hoạt runtime hooks tối ưu
+    // Kích hoạt runtime hooks chuẩn
     installAllZaloModHooks();
 
     void (^setupBlock)(NSNotification *) = ^(NSNotification * _Nonnull note) {
