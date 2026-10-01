@@ -23,6 +23,9 @@
 + (long long)customTTLMilliseconds;
 + (CGFloat)customFontSize;
 + (void)setCustomFontSize:(CGFloat)size;
++ (NSString *)selectedTextColorName;
++ (void)setSelectedTextColorName:(NSString *)name;
++ (UIColor *)selectedTextColor;
 + (BOOL)isGhostSeenEnabled;
 + (BOOL)isHideTypingEnabled;
 + (BOOL)isBugOriginalEnabled;
