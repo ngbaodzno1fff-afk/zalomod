@@ -147,6 +147,11 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 
 @implementation UITextView (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
+    CGFloat customSize = [ZaloModViewController customFontSize];
+    if (customSize > 0) {
+        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
+    }
+
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
         NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
@@ -155,6 +160,14 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
         [self zaloMod_insertText:text];
     }
 }
+
+- (BOOL)zaloMod_becomeFirstResponder {
+    CGFloat customSize = [ZaloModViewController customFontSize];
+    if (customSize > 0) {
+        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
+    }
+    return [self zaloMod_becomeFirstResponder];
+}
 @end
 
 @interface UITextField (ZaloModFontHook)
@@ -162,6 +175,11 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 
 @implementation UITextField (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
+    CGFloat customSize = [ZaloModViewController customFontSize];
+    if (customSize > 0) {
+        self.font = [UIFont systemFontOfSize:customSize weight:UIFontWeightMedium];
+    }
+
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
         NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
@@ -637,6 +655,7 @@ static void installAllZaloModHooks(void) {
 
         // 1. Hook Font Chữ vào ô nhập liệu
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
+        swizzleInstanceMethod([UITextView class], @selector(becomeFirstResponder), @selector(zaloMod_becomeFirstResponder));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
 
         // 2. Hook Anti-Undo trên UndoChatProcessor (Giữ nguyên nội dung, hiện nhãn 'đã thu hồi' rõ ràng)
