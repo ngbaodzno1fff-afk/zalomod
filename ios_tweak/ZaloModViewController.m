@@ -9,6 +9,8 @@
 // Keys lưu cấu hình NSUserDefaults
 static NSString * const kPrefAntiUndo       = @"ZaloMod_AntiUndo";
 static NSString * const kPrefCustomTTL      = @"ZaloMod_CustomTTL";
+static NSString * const kPrefCustomTTLUnit  = @"ZaloMod_CustomTTLUnit";  // 0: Tắt, 1: s, 2: h, 3: d
+static NSString * const kPrefCustomTTLValue = @"ZaloMod_CustomTTLValue";
 static NSString * const kPrefGhostSeen      = @"ZaloMod_GhostSeen";
 static NSString * const kPrefHideTyping     = @"ZaloMod_HideTyping";
 static NSString * const kPrefBugOriginal    = @"ZaloMod_BugOriginal";
@@ -32,6 +34,8 @@ static NSString * const kPrefSelectedFont   = @"ZaloMod_SelectedFont";
 
 // Controls
 @property (nonatomic, strong) UISegmentedControl *ttlSegment;
+@property (nonatomic, strong) UITextField *txtTTLValue;
+@property (nonatomic, strong) UILabel *lblTTLSummary;
 @property (nonatomic, strong) UILabel *lblCurrentFont;
 @property (nonatomic, strong) NSMutableArray<UIButton *> *fontButtons;
 @property (nonatomic, strong) UITextField *txtTargetId;
@@ -59,8 +63,26 @@ static ZaloModViewController *_sharedMenuVC = nil;
     return (val == nil) ? YES : [val boolValue];
 }
 
++ (long long)customTTLMilliseconds {
+    NSInteger unit = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLUnit];
+    NSInteger val = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLValue];
+    if (unit == 0 || val <= 0) {
+        NSInteger oldSecs = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTL];
+        return (oldSecs > 0) ? ((long long)oldSecs * 1000LL) : 0;
+    }
+    if (unit == 1) return (long long)val * 1000LL;               // s (giây)
+    if (unit == 2) return (long long)val * 3600LL * 1000LL;        // h (giờ)
+    if (unit == 3) return (long long)val * 86400LL * 1000LL;       // d (ngày)
+    return 0;
+}
+
 + (NSInteger)customTTLSeconds {
-    return [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTL];
+    return (NSInteger)([self customTTLMilliseconds] / 1000LL);
+}
+
++ (BOOL)isBugZLStyleEnabled {
+    id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefBugZLStyle];
+    return (val == nil) ? YES : [val boolValue];
 }
 
 + (BOOL)isGhostSeenEnabled {
@@ -172,7 +194,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     // =========================================================================
     // TAB 0: TIN NHẮN, CHỐNG THU HỒI, TTL VÀ ẢNH GỐC HD
     // =========================================================================
-    self.tabMessagesView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 640)];
+    self.tabMessagesView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 700)];
     CGFloat y = 10.0;
 
     // Switch: Chống thu hồi chuẩn xác: <text> ( đã thu hồi ) / ( đã thu hồi )\n[Ảnh HD]
@@ -181,21 +203,49 @@ static ZaloModViewController *_sharedMenuVC = nil;
     // Switch: Bug API Gửi Ảnh Gốc HD (is_original = 1)
     y = [self addSwitchRowToView:self.tabMessagesView y:y title:@"Bug API Gửi Ảnh Gốc HD (is_original = 1)" subtitle:@"Gửi ảnh RAW nguyên bản độ phân giải cao không bị nén" initial:[ZaloModViewController isBugOriginalEnabled] action:@selector(toggleBugOriginal:)];
 
-    // Tự động gán Custom TTL
+    // Tự điều chỉnh TTL: s (Giây), h (Giờ), d (Ngày) + nhập thời gian
     UILabel *lblTTL = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 20)];
-    lblTTL.text = @"⏱ Tự động gán TTL khi gửi tin nhắn:";
+    lblTTL.text = @"⏱ Tự điều chỉnh TTL (s: Giây, h: Giờ, d: Ngày):";
     lblTTL.textColor = [UIColor colorWithRed:0.2 green:0.85 blue:1.0 alpha:1.0];
     lblTTL.font = [UIFont boldSystemFontOfSize:12.5];
     [self.tabMessagesView addSubview:lblTTL];
     y += 24;
 
-    NSArray *ttlOptions = @[@"Tắt", @"10s", @"30s", @"60s", @"5p", @"1h", @"24h"];
-    self.ttlSegment = [[UISegmentedControl alloc] initWithItems:ttlOptions];
-    self.ttlSegment.frame = CGRectMake(14, y, contentW - 28, 28);
+    NSArray *ttlUnits = @[@"Tắt", @"s (Giây)", @"h (Giờ)", @"d (Ngày)"];
+    self.ttlSegment = [[UISegmentedControl alloc] initWithItems:ttlUnits];
+    self.ttlSegment.frame = CGRectMake(14, y, contentW - 28, 30);
     [self setupTTLSelection];
-    [self.ttlSegment addTarget:self action:@selector(ttlChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.ttlSegment addTarget:self action:@selector(ttlUnitChanged:) forControlEvents:UIControlEventValueChanged];
     [self.tabMessagesView addSubview:self.ttlSegment];
     y += 38;
+
+    CGFloat inputW = contentW - 28 - 96;
+    self.txtTTLValue = [self createTextFieldWithPlaceholder:@"Nhập số (vd: 30, 2, 7...)" y:y width:inputW];
+    self.txtTTLValue.keyboardType = UIKeyboardTypeNumberPad;
+    NSInteger savedVal = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLValue];
+    if (savedVal > 0) {
+        self.txtTTLValue.text = [NSString stringWithFormat:@"%ld", (long)savedVal];
+    }
+    [self.txtTTLValue addTarget:self action:@selector(ttlTextChanged:) forControlEvents:UIControlEventEditingChanged];
+    [self.tabMessagesView addSubview:self.txtTTLValue];
+
+    UIButton *btnApplyTTL = [UIButton buttonWithType:UIButtonTypeCustom];
+    btnApplyTTL.frame = CGRectMake(14 + inputW + 6, y, 90, 36);
+    btnApplyTTL.backgroundColor = [UIColor colorWithRed:0.0 green:0.6 blue:1.0 alpha:1.0];
+    btnApplyTTL.layer.cornerRadius = 8.0;
+    [btnApplyTTL setTitle:@"⚡ Lưu TTL" forState:UIControlStateNormal];
+    [btnApplyTTL setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btnApplyTTL.titleLabel.font = [UIFont boldSystemFontOfSize:12.5];
+    [btnApplyTTL addTarget:self action:@selector(actionApplyTTL) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabMessagesView addSubview:btnApplyTTL];
+    y += 42;
+
+    self.lblTTLSummary = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 20)];
+    self.lblTTLSummary.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    self.lblTTLSummary.font = [UIFont boldSystemFontOfSize:12.0];
+    [self updateTTLSummaryLabel];
+    [self.tabMessagesView addSubview:self.lblTTLSummary];
+    y += 28;
 
     // Switch Ghost Seen & Hide Typing
     y = [self addSwitchRowToView:self.tabMessagesView y:y title:@"Ẩn Đã Xem (Ghost Seen)" subtitle:@"Đọc tin nhắn mà không hiện chữ 'Đã xem'" initial:[ZaloModViewController isGhostSeenEnabled] action:@selector(toggleGhostSeen:)];
@@ -257,22 +307,22 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.tabFontsView.frame = CGRectMake(0, 0, contentW, y + 20);
 
     // =========================================================================
-    // TAB 2: BUG ZBUSINESS & ZLSTYLE HOÀNG GIA (Client-Side)
+    // TAB 2: BUG TOÀN BỘ ZSTYLES & NHẠC NỀN CHAT / PROFILE + ZBUSINESS PRO
     // =========================================================================
     self.tabZBusinessView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 460)];
     y = 12.0;
 
     UILabel *lblZBHeader = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 44)];
     lblZBHeader.numberOfLines = 2;
-    lblZBHeader.text = @"👑 Bug ZLStyle & Nhãn ZBusiness Pro (Client-Side):\nTrang cá nhân của bạn sẽ có tích vàng doanh nghiệp y chang thật.";
+    lblZBHeader.text = @"👑 Bug Toàn Bộ ZStyles & Hiện Nhạc Nền (Pill Player):\nHiện thanh nhạc Zing MP3 trên cùng (ai cũng thấy) & mở full ZStyle.";
     lblZBHeader.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     lblZBHeader.font = [UIFont boldSystemFontOfSize:12.0];
     [self.tabZBusinessView addSubview:lblZBHeader];
     y += 50;
 
-    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Nhãn ZBusiness Pro Doanh Nghiệp" subtitle:@"Hiển thị tích vàng xác thực ZBusiness trên profile" initial:[ZaloModViewController isBugZBusinessEnabled] action:@selector(toggleBugZBusiness:)];
+    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Bug All ZStyles & Nhạc Nền (Pill Player)" subtitle:@"Hiện thanh nhạc Zing MP3 trên đầu chat/profile, mở full gói ZStyle VIP" initial:[ZaloModViewController isBugZLStyleEnabled] action:@selector(toggleBugZLStyle:)];
 
-    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Khung Viền ZLStyle Hoàng Gia Ánh Kim" subtitle:@"Viền phát sáng Avatar & Profile VIP cực đẹp" initial:YES action:@selector(toggleBugZLStyle:)];
+    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Nhãn ZBusiness Pro Doanh Nghiệp" subtitle:@"Hiển thị tích vàng xác thực ZBusiness trên profile" initial:[ZaloModViewController isBugZBusinessEnabled] action:@selector(toggleBugZBusiness:)];
 
     self.tabZBusinessView.frame = CGRectMake(0, 0, contentW, y + 20);
 
@@ -472,15 +522,12 @@ static ZaloModViewController *_sharedMenuVC = nil;
 }
 
 - (void)setupTTLSelection {
-    NSInteger ttl = [ZaloModViewController customTTLSeconds];
-    if (ttl == 0) self.ttlSegment.selectedSegmentIndex = 0;
-    else if (ttl == 10) self.ttlSegment.selectedSegmentIndex = 1;
-    else if (ttl == 30) self.ttlSegment.selectedSegmentIndex = 2;
-    else if (ttl == 60) self.ttlSegment.selectedSegmentIndex = 3;
-    else if (ttl == 300) self.ttlSegment.selectedSegmentIndex = 4;
-    else if (ttl == 3600) self.ttlSegment.selectedSegmentIndex = 5;
-    else if (ttl == 86400) self.ttlSegment.selectedSegmentIndex = 6;
-    else self.ttlSegment.selectedSegmentIndex = 0;
+    NSInteger unit = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLUnit];
+    if (unit >= 0 && unit <= 3) {
+        self.ttlSegment.selectedSegmentIndex = unit;
+    } else {
+        self.ttlSegment.selectedSegmentIndex = 0;
+    }
 }
 
 - (void)segmentChanged:(UISegmentedControl *)sender {
@@ -524,7 +571,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
 
 - (void)toggleBugZLStyle:(UISwitch *)s {
     [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefBugZLStyle];
-    [self showToast:s.isOn ? @"👑 BẬT ZLStyle Hoàng Gia Ánh Kim" : @"❌ TẮT ZLStyle"];
+    [self showToast:s.isOn ? @"👑 BẬT Bug All ZStyles & Hiện Nhạc Nền (Pill Player)" : @"❌ TẮT Bug ZStyles"];
 }
 
 - (void)toggleGhostSeen:(UISwitch *)s {
@@ -537,24 +584,61 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self showToast:s.isOn ? @"🤫 BẬT Ẩn Đang Nhập" : @"⌨️ TẮT Ẩn Đang Nhập"];
 }
 
-- (void)ttlChanged:(UISegmentedControl *)s {
-    NSInteger ttl = 0;
-    switch (s.selectedSegmentIndex) {
-        case 1: ttl = 10; break;
-        case 2: ttl = 30; break;
-        case 3: ttl = 60; break;
-        case 4: ttl = 300; break;
-        case 5: ttl = 3600; break;
-        case 6: ttl = 86400; break;
-        default: ttl = 0; break;
+- (void)ttlUnitChanged:(UISegmentedControl *)s {
+    [[NSUserDefaults standardUserDefaults] setInteger:s.selectedSegmentIndex forKey:kPrefCustomTTLUnit];
+    [self updateTTLSummaryLabel];
+    if (s.selectedSegmentIndex == 0) {
+        [self showToast:@"⏱ Đã tắt tự hủy TTL"];
+    } else {
+        [self showToast:self.lblTTLSummary.text];
     }
-    [[NSUserDefaults standardUserDefaults] setInteger:ttl forKey:kPrefCustomTTL];
-    NSString *ttlDesc = @"";
-    if (ttl == 86400) ttlDesc = @"24 giờ (1 ngày)";
-    else if (ttl == 3600) ttlDesc = @"1 giờ";
-    else if (ttl == 300) ttlDesc = @"5 phút";
-    else if (ttl > 0) ttlDesc = [NSString stringWithFormat:@"%ld giây", (long)ttl];
-    [self showToast:ttl > 0 ? [NSString stringWithFormat:@"⏱ Tự động gán TTL: %@", ttlDesc] : @"⏱ Đã tắt tự hủy TTL"];
+}
+
+- (void)ttlTextChanged:(UITextField *)tf {
+    NSInteger val = [tf.text integerValue];
+    [[NSUserDefaults standardUserDefaults] setInteger:val forKey:kPrefCustomTTLValue];
+    [self updateTTLSummaryLabel];
+}
+
+- (void)saveCurrentTTL {
+    NSInteger unit = self.ttlSegment.selectedSegmentIndex;
+    NSInteger val = [self.txtTTLValue.text integerValue];
+    [[NSUserDefaults standardUserDefaults] setInteger:unit forKey:kPrefCustomTTLUnit];
+    [[NSUserDefaults standardUserDefaults] setInteger:val forKey:kPrefCustomTTLValue];
+    [self updateTTLSummaryLabel];
+}
+
+- (void)updateTTLSummaryLabel {
+    long long ms = [ZaloModViewController customTTLMilliseconds];
+    NSInteger unit = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLUnit];
+    NSInteger val = [[NSUserDefaults standardUserDefaults] integerForKey:kPrefCustomTTLValue];
+
+    if (unit == 0 || val <= 0) {
+        self.lblTTLSummary.text = @"⏱ Tự hủy TTL: ĐÃ TẮT";
+        self.lblTTLSummary.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0];
+    } else {
+        NSString *uName = @"";
+        if (unit == 1) uName = [NSString stringWithFormat:@"%ld giây", (long)val];
+        else if (unit == 2) uName = [NSString stringWithFormat:@"%ld giờ", (long)val];
+        else if (unit == 3) uName = [NSString stringWithFormat:@"%ld ngày", (long)val];
+
+        NSNumberFormatter *f = [[NSNumberFormatter alloc] init];
+        f.numberStyle = NSNumberFormatterDecimalStyle;
+        NSString *msStr = [f stringFromNumber:@(ms)];
+        self.lblTTLSummary.text = [NSString stringWithFormat:@"⏱ Đang gán TTL: %@ (%@ ms)", uName, msStr];
+        self.lblTTLSummary.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    }
+}
+
+- (void)actionApplyTTL {
+    [self.view endEditing:YES];
+    [self saveCurrentTTL];
+    long long ms = [ZaloModViewController customTTLMilliseconds];
+    if (ms > 0) {
+        [self showToast:[NSString stringWithFormat:@"✅ %@", self.lblTTLSummary.text]];
+    } else {
+        [self showToast:@"⏱ Đã tắt tự hủy TTL"];
+    }
 }
 
 - (void)actionSendMessage {
