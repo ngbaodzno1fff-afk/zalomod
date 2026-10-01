@@ -6,6 +6,7 @@
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <objc/message.h>
 #import "ZaloFloatingButton.h"
 #import "ZaloModViewController.h"
 #import "ZaloModFontHelper.h"
@@ -240,8 +241,9 @@ static void hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, 
     if (orig) orig(self, _cmd, chat);
 
     NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0 && [chat respondsToSelector:@selector(setTtl:)]) {
-        [chat setTtl:(long long)ttlSecs];
+    SEL setTtlSel = sel_registerName("setTtl:");
+    if (ttlSecs > 0 && [chat respondsToSelector:setTtlSel]) {
+        ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, (long long)ttlSecs);
     }
 }
 
