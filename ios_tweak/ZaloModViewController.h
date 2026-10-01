@@ -20,9 +20,11 @@
 // Các hàm kiểm tra trạng thái mod toàn cục
 + (BOOL)isAntiUndoEnabled;
 + (NSInteger)customTTLSeconds;
++ (long long)customTTLMilliseconds;
 + (BOOL)isGhostSeenEnabled;
 + (BOOL)isHideTypingEnabled;
 + (BOOL)isBugOriginalEnabled;
 + (BOOL)isBugZBusinessEnabled;
++ (BOOL)isBugZLStyleEnabled;
 
 @end
