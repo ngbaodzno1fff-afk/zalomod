@@ -981,7 +981,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Hook ZMp3Manager Profile Music ZStyle thành công!");
         }
 
-        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%!");
+        NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%%!");
     });
 }
 
