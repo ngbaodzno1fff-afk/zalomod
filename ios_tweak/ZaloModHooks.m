@@ -244,16 +244,15 @@ static id hook_originalBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 5b. HOOK TỰ ĐỘNG GÁN TTL (24H, 1H, 5P,...) VÀO TIN NHẮN (CHUẨN MILLISECONDS)
+// 5b. HOOK TỰ ĐỘNG GÁN TTL TÙY CHỈNH (s, h, d) VÀO TIN NHẮN (CHUẨN MILLISECONDS)
 // =========================================================================
 static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
     id (*orig)(id, SEL, id) = (id (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
     id result = orig ? orig(self, _cmd, chat) : chat;
     if (!result) result = chat;
 
-    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0) {
-        long long ttlMs = (long long)ttlSecs * 1000LL;
+    long long ttlMs = [ZaloModViewController customTTLMilliseconds];
+    if (ttlMs > 0) {
         SEL setTtlSel = sel_registerName("setTtl:");
         if ([result respondsToSelector:setTtlSel]) {
             ((void (*)(id, SEL, long long))objc_msgSend)(result, setTtlSel, ttlMs);
@@ -269,9 +268,8 @@ static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
     BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"));
     BOOL res = orig ? orig(self, _cmd, chat) : NO;
 
-    NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
-    if (ttlSecs > 0 && chat) {
-        long long ttlMs = (long long)ttlSecs * 1000LL;
+    long long ttlMs = [ZaloModViewController customTTLMilliseconds];
+    if (ttlMs > 0 && chat) {
         SEL setTtlSel = sel_registerName("setTtl:");
         if ([chat respondsToSelector:setTtlSel]) {
             ((void (*)(id, SEL, long long))objc_msgSend)(chat, setTtlSel, ttlMs);
@@ -329,14 +327,13 @@ static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
 @implementation NSJSONSerialization (ZaloModTTL)
 + (NSData *)zaloMod_dataWithJSONObject:(id)obj options:(NSJSONWritingOptions)opt error:(NSError **)error {
     if ([obj isKindOfClass:[NSDictionary class]]) {
-        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        long long ttlMs = [ZaloModViewController customTTLMilliseconds];
         NSMutableDictionary *dict = nil;
-        if (ttlSecs > 0) {
+        if (ttlMs > 0) {
             dict = [obj mutableCopy];
             if (dict[@"text"] || dict[@"msg"] || dict[@"cmsg"] || dict[@"content"]) {
-                long long ttlMs = (long long)ttlSecs * 1000LL;
                 dict[@"ttl"] = @(ttlMs);
-                dict[@"ttl_sec"] = @(ttlSecs);
+                dict[@"ttl_sec"] = @(ttlMs / 1000LL);
                 dict[@"ttl_server"] = @(ttlMs);
             }
         }
@@ -375,6 +372,56 @@ static id hook_textColorBadge(id self, SEL _cmd) {
 
 static id hook_backgroundColorBadge(id self, SEL _cmd) {
     return [ZaloModViewController isBugZBusinessEnabled] ? [UIColor colorWithRed:0.05 green:0.20 blue:0.29 alpha:0.95] : nil;
+}
+
+// =========================================================================
+// 6b. BUG ALL ZSTYLES & NHẠC NỀN CHAT / PROFILE (PILL PLAYER)
+// =========================================================================
+static BOOL hook_isZStyleSubscribed(id self, SEL _cmd, id userId) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return YES;
+    BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_isZStyleSubscribed:"));
+    return orig ? orig(self, _cmd, userId) : NO;
+}
+
+static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return 1; // Gói ZStyle VIP 1
+    NSInteger (*orig)(id, SEL, id) = (NSInteger (*)(id, SEL, id))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_getZStylePackageId:"));
+    return orig ? orig(self, _cmd, userId) : 0;
+}
+
+static BOOL hook_zstyleAlwaysTrue(id self, SEL _cmd) {
+    return [ZaloModViewController isBugZLStyleEnabled];
+}
+
+static BOOL hook_zstyleAlwaysFalse(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return NO;
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_zstyleFalse:"));
+    return orig ? orig(self, _cmd) : NO;
+}
+
+static NSInteger hook_currentPillStatus(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugZLStyleEnabled]) return 4; // Active Pill Player
+    NSInteger (*orig)(id, SEL) = (NSInteger (*)(id, SEL))class_getMethodImplementation(object_getClass(self), sel_registerName("zaloMod_orig_currentPillStatus"));
+    return orig ? orig(self, _cmd) : 0;
+}
+
+static NSDictionary *hook_BuddyEntity_zstyleInfo(id self, SEL _cmd) {
+    NSDictionary * (*orig)(id, SEL) = (NSDictionary * (*)(id, SEL))class_getMethodImplementation(objc_getClass("BuddyEntity"), sel_registerName("zaloMod_orig_zstyleInfo"));
+    NSDictionary *res = orig ? orig(self, _cmd) : nil;
+    if ([ZaloModViewController isBugZLStyleEnabled]) {
+        if (!res || res.count == 0) {
+            return @{
+                @"zstyle_package_id": @(1),
+                @"package_id": @(1),
+                @"is_zstyle": @(1),
+                @"is_subscribed": @(1),
+                @"zstyle_music": @(1),
+                @"zstyle_avatar_frame": @(1),
+                @"zstyle_cover": @(1)
+            };
+        }
+    }
+    return res;
 }
 
 // Dọn dẹp triệt để các subview thừa cũ trên UIViewController
@@ -521,6 +568,77 @@ static void installAllZaloModHooks(void) {
             if (m4) method_setImplementation(m4, (IMP)hook_backgroundColorBadge);
 
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
+        }
+
+        // 4b. Hook All ZStyles & Nhạc Nền (ProfileLegacyUtils, SocialFeatureSetting, ProfileMusicOverlay, BuddyEntity)
+        Class legacyUtilsCls = objc_getClass("ProfileLegacyUtils");
+        if (legacyUtilsCls) {
+            Class metaCls = object_getClass(legacyUtilsCls);
+            Method mSub = class_getClassMethod(legacyUtilsCls, sel_registerName("isZStyleSubscribed:"));
+            if (mSub && metaCls) {
+                IMP orig = method_getImplementation(mSub);
+                class_addMethod(metaCls, sel_registerName("zaloMod_orig_isZStyleSubscribed:"), orig, method_getTypeEncoding(mSub));
+                method_setImplementation(mSub, (IMP)hook_isZStyleSubscribed);
+            }
+            Method mPkg = class_getClassMethod(legacyUtilsCls, sel_registerName("getZStylePackageId:"));
+            if (mPkg && metaCls) {
+                IMP orig = method_getImplementation(mPkg);
+                class_addMethod(metaCls, sel_registerName("zaloMod_orig_getZStylePackageId:"), orig, method_getTypeEncoding(mPkg));
+                method_setImplementation(mPkg, (IMP)hook_getZStylePackageId);
+            }
+            NSLog(@"[DucLamXNgBao] Hook ProfileLegacyUtils ZStyle thành công!");
+        }
+
+        Class socialSettingCls = objc_getClass("SocialFeatureSetting");
+        if (socialSettingCls) {
+            Method m1 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledZStyleAvatarFrame"));
+            if (m1) method_setImplementation(m1, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m2 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledZStyleNameCard"));
+            if (m2) method_setImplementation(m2, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m3 = class_getClassMethod(socialSettingCls, sel_registerName("enableStoryMusic"));
+            if (m3) method_setImplementation(m3, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m4 = class_getClassMethod(socialSettingCls, sel_registerName("enableSwithProfileUI"));
+            if (m4) method_setImplementation(m4, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m5 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledFrameType:"));
+            if (m5) method_setImplementation(m5, (IMP)hook_zstyleAlwaysTrue);
+            NSLog(@"[DucLamXNgBao] Hook SocialFeatureSetting ZStyle thành công!");
+        }
+
+        Class musicOverlayCls = objc_getClass("ProfileMusicOverlay");
+        if (musicOverlayCls) {
+            Method mViewer = class_getInstanceMethod(musicOverlayCls, sel_registerName("_isViewerZStyle"));
+            if (mViewer) method_setImplementation(mViewer, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mSuggest = class_getInstanceMethod(musicOverlayCls, sel_registerName("_canSuggest"));
+            if (mSuggest) method_setImplementation(mSuggest, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPill = class_getInstanceMethod(musicOverlayCls, sel_registerName("_currentPillStatus"));
+            if (mPill) {
+                IMP orig = method_getImplementation(mPill);
+                class_addMethod(musicOverlayCls, sel_registerName("zaloMod_orig_currentPillStatus"), orig, method_getTypeEncoding(mPill));
+                method_setImplementation(mPill, (IMP)hook_currentPillStatus);
+            }
+
+            Method mLocErr = class_getInstanceMethod(musicOverlayCls, sel_registerName("isProfileMusicLocationError"));
+            if (mLocErr) method_setImplementation(mLocErr, (IMP)hook_zstyleAlwaysFalse);
+
+            Method mStop = class_getInstanceMethod(musicOverlayCls, sel_registerName("shouldStopMusic"));
+            if (mStop) method_setImplementation(mStop, (IMP)hook_zstyleAlwaysFalse);
+            NSLog(@"[DucLamXNgBao] Hook ProfileMusicOverlay Pill Player thành công!");
+        }
+
+        Class buddyCls = objc_getClass("BuddyEntity");
+        if (buddyCls) {
+            Method mInfo = class_getInstanceMethod(buddyCls, sel_registerName("_zstyleInfo"));
+            if (mInfo) {
+                IMP orig = method_getImplementation(mInfo);
+                class_addMethod(buddyCls, sel_registerName("zaloMod_orig_zstyleInfo"), orig, method_getTypeEncoding(mInfo));
+                method_setImplementation(mInfo, (IMP)hook_BuddyEntity_zstyleInfo);
+            }
         }
 
         // 5. Hook TTL vào ChatDataManager, ChatEntity & NSJSONSerialization (Chuẩn Milliseconds)
