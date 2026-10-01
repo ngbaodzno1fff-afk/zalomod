@@ -21,9 +21,9 @@
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
     UIView *hitView = [super hitTest:point withEvent:event];
     if (hitView == self || hitView == self.rootViewController.view) {
-        return nil; // Cho phép chạm xuyên thấu xuống Zalo!
+        return nil; // Cho phép chạm xuyên thấu xuống giao diện Zalo!
     }
-    return hitView; // Nút tròn nhận sự kiện cảm ứng bình thường!
+    return hitView; // Nút tròn hoặc menu nhận sự kiện cảm ứng bình thường!
 }
 @end
 
@@ -51,47 +51,16 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
             ZaloFloatingButton *bubble = [ZaloFloatingButton sharedInstance];
             bubble.delegate = self;
 
-            // Cách 1: Thử gắn trực tiếp vào Top Window của Zalo để 100% bấm được mượt mà
-            UIWindow *topWindow = nil;
-            if (@available(iOS 13.0, *)) {
-                for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                    if ([scene isKindOfClass:[UIWindowScene class]]) {
-                        UIWindowScene *ws = (UIWindowScene *)scene;
-                        for (UIWindow *w in ws.windows) {
-                            if (!w.hidden && w.isKeyWindow) {
-                                topWindow = w;
-                                break;
-                            }
-                        }
-                        if (topWindow) break;
-                    }
-                }
-            }
-            if (!topWindow) {
-                topWindow = [UIApplication sharedApplication].keyWindow;
-            }
-
-            if (topWindow && topWindow.rootViewController && topWindow.rootViewController.view) {
-                UIView *targetView = topWindow.rootViewController.view;
-                if (bubble.superview != targetView) {
-                    [bubble removeFromSuperview];
-                    [targetView addSubview:bubble];
-                    [targetView bringSubviewToFront:bubble];
-                }
-                [bubble show];
-                NSLog(@"[DucLamXNgBao] Đã gắn Cục Menu Tròn trực tiếp vào Top Window thành công!");
-                return;
-            }
-
-            // Cách 2: Nếu chưa có Top Window, dùng ZaloFloatingWindow độc lập
             UIWindowScene *activeScene = nil;
             if (@available(iOS 13.0, *)) {
                 for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
                     if ([scene isKindOfClass:[UIWindowScene class]]) {
-                        activeScene = (UIWindowScene *)scene;
-                        if (scene.activationState == UISceneActivationStateForegroundActive) {
+                        UIWindowScene *ws = (UIWindowScene *)scene;
+                        if (ws.activationState == UISceneActivationStateForegroundActive || ws.activationState == UISceneActivationStateForegroundInactive) {
+                            activeScene = ws;
                             break;
                         }
+                        if (!activeScene) activeScene = ws;
                     }
                 }
             }
@@ -112,7 +81,7 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
                 }
             }
 
-            gFloatingWindow.windowLevel = UIWindowLevelAlert + 1000.0;
+            gFloatingWindow.windowLevel = UIWindowLevelAlert + 100.0;
             gFloatingWindow.backgroundColor = [UIColor clearColor];
 
             if (!gFloatingWindow.rootViewController) {
@@ -127,9 +96,10 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
             if (bubble.superview != gFloatingWindow.rootViewController.view) {
                 [bubble removeFromSuperview];
                 [gFloatingWindow.rootViewController.view addSubview:bubble];
+                [gFloatingWindow.rootViewController.view bringSubviewToFront:bubble];
             }
             [bubble show];
-            NSLog(@"[DucLamXNgBao] Đã khởi tạo Cục Menu Tròn Zalo VIP Mod thành công!");
+            NSLog(@"[DucLamXNgBao] Cục Menu Tròn Zalo VIP Mod đã sẵn sàng trên ZaloFloatingWindow!");
         } @catch (NSException *exception) {
             NSLog(@"[DucLamXNgBao] Exception initializing floating button: %@", exception);
         }
@@ -138,15 +108,20 @@ static ZaloFloatingWindow *gFloatingWindow = nil;
 
 #pragma mark - ZaloFloatingButtonDelegate
 - (void)floatingButtonDidTap:(id)sender {
-    UIViewController *presentingVC = nil;
-    if (gFloatingWindow && gFloatingWindow.rootViewController) {
-        presentingVC = gFloatingWindow.rootViewController;
-    }
+    UIViewController *presentingVC = gFloatingWindow.rootViewController;
     if (!presentingVC) {
-        UIWindow *kw = [UIApplication sharedApplication].keyWindow;
-        presentingVC = kw.rootViewController;
-        while (presentingVC.presentedViewController) {
-            presentingVC = presentingVC.presentedViewController;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    for (UIWindow *w in ((UIWindowScene *)scene).windows) {
+                        if (!w.hidden && w.rootViewController) {
+                            presentingVC = w.rootViewController;
+                            break;
+                        }
+                    }
+                }
+                if (presentingVC) break;
+            }
         }
     }
     if (!presentingVC) return;
@@ -288,17 +263,17 @@ static void markChatAsOriginalIfPhoto(id chat) {
     if (!chat || ![ZaloModViewController isBugOriginalEnabled]) return;
     @try {
         BOOL isPhoto = NO;
-        if ([chat respondsToSelector:sel_registerName("isPhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhoto"))) {
+        if ([chat respondsToSelector:sel_registerName("isMessagePhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isMessagePhoto"))) {
             isPhoto = YES;
-        } else if ([chat respondsToSelector:sel_registerName("isPhotoType")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhotoType"))) {
-            isPhoto = YES;
-        } else if ([chat respondsToSelector:sel_registerName("isPhotoAttachment")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhotoAttachment"))) {
-            isPhoto = YES;
-        } else if ([chat respondsToSelector:sel_registerName("isPhotoHD")]) {
-            isPhoto = YES;
-        } else if ([chat respondsToSelector:sel_registerName("photoHDSize")]) {
+        } else if ([chat respondsToSelector:sel_registerName("mediatype")]) {
+            NSInteger mt = ((NSInteger (*)(id, SEL))objc_msgSend)(chat, sel_registerName("mediatype"));
+            if (mt == 11 || mt == 28 || mt == 1 || mt == 3) {
+                isPhoto = YES;
+            }
+        } else if ([chat respondsToSelector:sel_registerName("isPhoto")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isPhoto"))) {
             isPhoto = YES;
         }
+
         if (isPhoto) {
             if ([chat respondsToSelector:sel_registerName("setIsOriginal:")]) {
                 ((void (*)(id, SEL, long long))objc_msgSend)(chat, sel_registerName("setIsOriginal:"), 1);
@@ -311,6 +286,20 @@ static void markChatAsOriginalIfPhoto(id chat) {
             }
             if ([chat respondsToSelector:sel_registerName("setCanSendOriginal:")]) {
                 ((void (*)(id, SEL, BOOL))objc_msgSend)(chat, sel_registerName("setCanSendOriginal:"), YES);
+            }
+
+            // Gán trực tiếp trên richMsgNormal (RichMessageContent)
+            SEL richSel = sel_registerName("richMsgNormal");
+            if ([chat respondsToSelector:richSel]) {
+                id richContent = ((id (*)(id, SEL))objc_msgSend)(chat, richSel);
+                if (richContent) {
+                    if ([richContent respondsToSelector:sel_registerName("setIsOriginal:")]) {
+                        ((void (*)(id, SEL, BOOL))objc_msgSend)(richContent, sel_registerName("setIsOriginal:"), YES);
+                    }
+                    if ([richContent respondsToSelector:sel_registerName("setIsPhotoHD:")]) {
+                        ((void (*)(id, SEL, BOOL))objc_msgSend)(richContent, sel_registerName("setIsPhotoHD:"), YES);
+                    }
+                }
             }
         }
     } @catch (NSException *e) {}
@@ -356,9 +345,33 @@ static BOOL hook_RichMessageContent_isPhotoHD(id self, SEL _cmd) {
     return orig ? orig(self, _cmd) : YES;
 }
 
+static NSInteger hook_ChatEntity_photoQuality(id self, SEL _cmd) {
+    if ([ZaloModViewController isBugOriginalEnabled]) {
+        return 2; // Original Quality
+    }
+    NSInteger (*orig)(id, SEL) = (NSInteger (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_photoQuality"));
+    return orig ? orig(self, _cmd) : 2;
+}
+
 // =========================================================================
 // 6. ÁP DỤNG FONT CHỮ, TTL VÀ ẢNH ORIGINAL VÀO MỌI TIN NHẮN GỬI ĐI (100% HIỆU LỰC)
 // =========================================================================
+static BOOL isOutgoingChatMessage(id chat) {
+    if (!chat) return NO;
+    @try {
+        if ([chat respondsToSelector:sel_registerName("isSending")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isSending"))) {
+            return YES;
+        }
+        if ([chat respondsToSelector:sel_registerName("isInProgressSendingMessage")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isInProgressSendingMessage"))) {
+            return YES;
+        }
+        if ([chat respondsToSelector:sel_registerName("isFromOwner")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isFromOwner"))) {
+            return YES;
+        }
+    } @catch (NSException *e) {}
+    return NO;
+}
+
 static void applyAllModSettingsToOutgoingChat(id chat) {
     if (!chat) return;
     @try {
@@ -379,7 +392,7 @@ static void applyAllModSettingsToOutgoingChat(id chat) {
             }
         }
 
-        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d)
+        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d) - CHỈ CHO TIN NHẮN CỦA MÌNH
         NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
         if (ttlSecs > 0) {
             SEL setTtlSel = sel_registerName("setTtl:");
@@ -396,7 +409,7 @@ static void applyAllModSettingsToOutgoingChat(id chat) {
     }
 }
 
-// Hook ZAChatSendingManager: Nơi gửi đi tất cả tin nhắn & ảnh của người dùng
+// Hook ZAChatSendingManager: Nơi gửi đi tất cả tin nhắn & ảnh của người dùng (100% Outgoing)
 static void hook_sendChat_checkUpload(id self, SEL _cmd, id chat, BOOL check) {
     applyAllModSettingsToOutgoingChat(chat);
     void (*orig)(id, SEL, id, BOOL) = (void (*)(id, SEL, id, BOOL))class_getMethodImplementation(objc_getClass("ZAChatSendingManager"), sel_registerName("zaloMod_orig_sendChat_checkUpload:"));
@@ -409,31 +422,111 @@ static void hook_sendChat_destinations(id self, SEL _cmd, id chat, id dests, BOO
     if (orig) orig(self, _cmd, chat, dests, check, wait);
 }
 
-// Hook ChatDataManager: Nơi chuẩn bị và đồng bộ tin nhắn gửi đi
-static id hook_syncMessageWithCurrentDisappearingTTLIfNeed(id self, SEL _cmd, id chat) {
-    applyAllModSettingsToOutgoingChat(chat);
-    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"));
-    id result = chat;
-    if (orig) {
-        result = ((id (*)(id, SEL, id))orig)(self, _cmd, chat);
-    }
-    if (!result) result = chat;
-    applyAllModSettingsToOutgoingChat(result);
-    return result;
-}
-
 static BOOL hook_attachTTLValueForMessageIfNeed(id self, SEL _cmd, id chat) {
     BOOL (*orig)(id, SEL, id) = (BOOL (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"));
     BOOL res = orig ? orig(self, _cmd, chat) : NO;
-    applyAllModSettingsToOutgoingChat(chat);
-    if ([ZaloModViewController customTTLSeconds] > 0) {
-        res = YES;
+    if (isOutgoingChatMessage(chat)) {
+        applyAllModSettingsToOutgoingChat(chat);
+        if ([ZaloModViewController customTTLSeconds] > 0) {
+            res = YES;
+        }
     }
     return res;
 }
 
 // =========================================================================
-// 7. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
+// 7. GHOST SEEN (ẨN ĐÃ XEM) & HIDE TYPING (ẨN ĐANG SOẠN TIN)
+// =========================================================================
+static BOOL hook_checkCanSendSeenInboxEntity(id self, SEL _cmd, id entity, NSInteger msgType, id toUserId) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return NO;
+    }
+    BOOL (*orig)(id, SEL, id, NSInteger, id) = (BOOL (*)(id, SEL, id, NSInteger, id))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_checkCanSendSeenInboxEntity:messageType:withToUserId:"));
+    return orig ? orig(self, _cmd, entity, msgType, toUserId) : YES;
+}
+
+static void hook_sendTypingWithType(id self, SEL _cmd, NSInteger type, id toUserId, NSInteger msgType, BOOL isE2ee) {
+    if ([ZaloModViewController isHideTypingEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, NSInteger, id, NSInteger, BOOL) = (void (*)(id, SEL, NSInteger, id, NSInteger, BOOL))class_getMethodImplementation(objc_getClass("ChatDataManager"), sel_registerName("zaloMod_orig_sendTypingWithType:toUserId:messageType:isE2eeChat:"));
+    if (orig) orig(self, _cmd, type, toUserId, msgType, isE2ee);
+}
+
+static void hook_sendSeenWithChatEntity(id self, SEL _cmd, id chat) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("ChatSendSeenDataManager"), sel_registerName("zaloMod_orig_sendSeenWithChatEntity:"));
+    if (orig) orig(self, _cmd, chat);
+}
+
+static void hook_sendSeenServer(id self, SEL _cmd) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL) = (void (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatSendSeenDataManager"), sel_registerName("zaloMod_orig_sendSeenServer"));
+    if (orig) orig(self, _cmd);
+}
+
+static void hook_sendSeenServerPeriodicallyIfNeeded(id self, SEL _cmd) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL) = (void (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatSendSeenDataManager"), sel_registerName("zaloMod_orig_sendSeenServerPeriodicallyIfNeeded"));
+    if (orig) orig(self, _cmd);
+}
+
+static void hook_sendSeenMessageWithSeenData(id self, SEL _cmd, id seenData, NSInteger msgType) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, id, NSInteger) = (void (*)(id, SEL, id, NSInteger))class_getMethodImplementation(objc_getClass("ChatSendSeenDataManager"), sel_registerName("zaloMod_orig_sendSeenMessageWithSeenData:messageType:"));
+    if (orig) orig(self, _cmd, seenData, msgType);
+}
+
+static void hook_sendTypingWithVoiceBoardType(id self, SEL _cmd, NSInteger type) {
+    if ([ZaloModViewController isHideTypingEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, NSInteger) = (void (*)(id, SEL, NSInteger))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendTypingWithVoiceBoardType:"));
+    if (orig) orig(self, _cmd, type);
+}
+
+static void hook_sendSeenForLastReadMessage(id self, SEL _cmd) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL) = (void (*)(id, SEL))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendSeenForLastReadMessage"));
+    if (orig) orig(self, _cmd);
+}
+
+static void hook_sendSeenMessageWithChatEntity(id self, SEL _cmd, id chat) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendSeenMessageWithChatEntity:"));
+    if (orig) orig(self, _cmd, chat);
+}
+
+static void hook_sendSeenInfoInboxEntity(id self, SEL _cmd, id entity) {
+    if ([ZaloModViewController isGhostSeenEnabled]) {
+        return;
+    }
+    void (*orig)(id, SEL, id) = (void (*)(id, SEL, id))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendSeenInfoInboxEntity:"));
+    if (orig) orig(self, _cmd, entity);
+}
+
+static BOOL hook_isEnableTypingMessage(id self, SEL _cmd) {
+    if ([ZaloModViewController isHideTypingEnabled]) {
+        return NO;
+    }
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("FeatureManager"), sel_registerName("zaloMod_orig_isEnableTypingMessage"));
+    return orig ? orig(self, _cmd) : YES;
+}
+
+// =========================================================================
+// 8. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
 // =========================================================================
 static BOOL hook_alwaysTrue(id self, SEL _cmd) {
     return [ZaloModViewController isBugZBusinessEnabled];
@@ -456,7 +549,7 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 8. BUG ALL ZSTYLES & PROFILE (AN TOÀN TUYỆT ĐỐI, KHÔNG TRẢ DICTIONARY LỖI)
+// 9. BUG ALL ZSTYLES & PROFILE (AN TOÀN TUYỆT ĐỐI, KHÔNG TRẢ DICTIONARY LỖI)
 // =========================================================================
 static BOOL hook_zstyleAlwaysTrue(id self, SEL _cmd) {
     return [ZaloModViewController isBugZLStyleEnabled];
@@ -479,7 +572,7 @@ static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
 }
 
 // =========================================================================
-// 9. KÍCH HOẠT TOÀN BỘ HOOKS (CHẠY ỔN ĐỊNH 100%, ĐẦY ĐỦ TÁC DỤNG)
+// 10. KÍCH HOẠT TOÀN BỘ HOOKS (CHẠY ỔN ĐỊNH 100%, ĐẦY ĐỦ TÁC DỤNG)
 // =========================================================================
 static void installAllZaloModHooks(void) {
     static dispatch_once_t onceToken;
@@ -571,6 +664,34 @@ static void installAllZaloModHooks(void) {
             if (mRemHD) method_setImplementation(mRemHD, (IMP)hook_alwaysTrue);
         }
 
+        // Hook RichMessageContent: Gán cờ Original/PhotoHD cho ảnh gửi đi
+        Class richContentCls = objc_getClass("RichMessageContent");
+        if (richContentCls) {
+            Method mOrig = class_getInstanceMethod(richContentCls, sel_registerName("isOriginal"));
+            if (mOrig) {
+                IMP orig = method_getImplementation(mOrig);
+                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isOriginal:"), orig, method_getTypeEncoding(mOrig));
+                method_setImplementation(mOrig, (IMP)hook_RichMessageContent_isOriginal);
+            }
+            Method mHD = class_getInstanceMethod(richContentCls, sel_registerName("isPhotoHD"));
+            if (mHD) {
+                IMP orig = method_getImplementation(mHD);
+                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isPhotoHD:"), orig, method_getTypeEncoding(mHD));
+                method_setImplementation(mHD, (IMP)hook_RichMessageContent_isPhotoHD);
+            }
+        }
+
+        // Hook ChatEntity photoQuality để luôn nhận là Original
+        Class chatEntityCls = objc_getClass("ChatEntity");
+        if (chatEntityCls) {
+            Method mPhotoQ = class_getInstanceMethod(chatEntityCls, sel_registerName("photoQuality"));
+            if (mPhotoQ) {
+                IMP orig = method_getImplementation(mPhotoQ);
+                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_photoQuality"), orig, method_getTypeEncoding(mPhotoQ));
+                method_setImplementation(mPhotoQ, (IMP)hook_ChatEntity_photoQuality);
+            }
+        }
+
         // Hook ZAChatSendingManager: Gửi tin nhắn tự động áp dụng Font, TTL và ảnh Original
         Class sendMgrCls = objc_getClass("ZAChatSendingManager");
         if (sendMgrCls) {
@@ -589,20 +710,104 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao] Hook ZAChatSendingManager áp dụng Font, TTL, Original thành công!");
         }
 
-        // Hook RichMessageContent: Gán cờ Original/PhotoHD cho ảnh gửi đi
-        Class richContentCls = objc_getClass("RichMessageContent");
-        if (richContentCls) {
-            Method mOrig = class_getInstanceMethod(richContentCls, sel_registerName("isOriginal"));
-            if (mOrig) {
-                IMP orig = method_getImplementation(mOrig);
-                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isOriginal:"), orig, method_getTypeEncoding(mOrig));
-                method_setImplementation(mOrig, (IMP)hook_RichMessageContent_isOriginal);
+        // Hook ChatDataManager attachTTLValueForMessageIfNeed
+        Class chatDataMgrCls = objc_getClass("ChatDataManager");
+        if (chatDataMgrCls) {
+            Method mAttach = class_getInstanceMethod(chatDataMgrCls, sel_registerName("attachTTLValueForMessageIfNeed:"));
+            if (mAttach) {
+                IMP orig = method_getImplementation(mAttach);
+                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"), orig, method_getTypeEncoding(mAttach));
+                method_setImplementation(mAttach, (IMP)hook_attachTTLValueForMessageIfNeed);
             }
-            Method mHD = class_getInstanceMethod(richContentCls, sel_registerName("isPhotoHD"));
-            if (mHD) {
-                IMP orig = method_getImplementation(mHD);
-                class_addMethod(richContentCls, sel_registerName("zaloMod_orig_isPhotoHD:"), orig, method_getTypeEncoding(mHD));
-                method_setImplementation(mHD, (IMP)hook_RichMessageContent_isPhotoHD);
+
+            Method mCanSeen = class_getInstanceMethod(chatDataMgrCls, sel_registerName("checkCanSendSeenInboxEntity:messageType:withToUserId:"));
+            if (mCanSeen) {
+                IMP orig = method_getImplementation(mCanSeen);
+                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_checkCanSendSeenInboxEntity:messageType:withToUserId:"), orig, method_getTypeEncoding(mCanSeen));
+                method_setImplementation(mCanSeen, (IMP)hook_checkCanSendSeenInboxEntity);
+            }
+
+            Method mTyping = class_getInstanceMethod(chatDataMgrCls, sel_registerName("sendTypingWithType:toUserId:messageType:isE2eeChat:"));
+            if (mTyping) {
+                IMP orig = method_getImplementation(mTyping);
+                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_sendTypingWithType:toUserId:messageType:isE2eeChat:"), orig, method_getTypeEncoding(mTyping));
+                method_setImplementation(mTyping, (IMP)hook_sendTypingWithType);
+            }
+        }
+
+        // Hook ChatSendSeenDataManager (Ghost Seen)
+        Class sendSeenMgrCls = objc_getClass("ChatSendSeenDataManager");
+        if (sendSeenMgrCls) {
+            Method mSeen1 = class_getInstanceMethod(sendSeenMgrCls, sel_registerName("sendSeenWithChatEntity:"));
+            if (mSeen1) {
+                IMP orig = method_getImplementation(mSeen1);
+                class_addMethod(sendSeenMgrCls, sel_registerName("zaloMod_orig_sendSeenWithChatEntity:"), orig, method_getTypeEncoding(mSeen1));
+                method_setImplementation(mSeen1, (IMP)hook_sendSeenWithChatEntity);
+            }
+
+            Method mSeen2 = class_getInstanceMethod(sendSeenMgrCls, sel_registerName("sendSeenServer"));
+            if (mSeen2) {
+                IMP orig = method_getImplementation(mSeen2);
+                class_addMethod(sendSeenMgrCls, sel_registerName("zaloMod_orig_sendSeenServer"), orig, method_getTypeEncoding(mSeen2));
+                method_setImplementation(mSeen2, (IMP)hook_sendSeenServer);
+            }
+
+            Method mSeen3 = class_getInstanceMethod(sendSeenMgrCls, sel_registerName("sendSeenServerPeriodicallyIfNeeded"));
+            if (mSeen3) {
+                IMP orig = method_getImplementation(mSeen3);
+                class_addMethod(sendSeenMgrCls, sel_registerName("zaloMod_orig_sendSeenServerPeriodicallyIfNeeded"), orig, method_getTypeEncoding(mSeen3));
+                method_setImplementation(mSeen3, (IMP)hook_sendSeenServerPeriodicallyIfNeeded);
+            }
+
+            Method mSeen4 = class_getInstanceMethod(sendSeenMgrCls, sel_registerName("_sendSeenMessageWithSeenData:messageType:"));
+            if (mSeen4) {
+                IMP orig = method_getImplementation(mSeen4);
+                class_addMethod(sendSeenMgrCls, sel_registerName("zaloMod_orig_sendSeenMessageWithSeenData:messageType:"), orig, method_getTypeEncoding(mSeen4));
+                method_setImplementation(mSeen4, (IMP)hook_sendSeenMessageWithSeenData);
+            }
+            NSLog(@"[DucLamXNgBao] Hook ChatSendSeenDataManager Ghost Seen thành công!");
+        }
+
+        // Hook BaseChatTVC (Ghost Seen & Hide Typing)
+        Class baseChatTVCCls = objc_getClass("BaseChatTVC");
+        if (baseChatTVCCls) {
+            Method mVoiceTyping = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendTypingWithVoiceBoardType:"));
+            if (mVoiceTyping) {
+                IMP orig = method_getImplementation(mVoiceTyping);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_sendTypingWithVoiceBoardType:"), orig, method_getTypeEncoding(mVoiceTyping));
+                method_setImplementation(mVoiceTyping, (IMP)hook_sendTypingWithVoiceBoardType);
+            }
+
+            Method mSeenLast = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendSeenForLastReadMessage"));
+            if (mSeenLast) {
+                IMP orig = method_getImplementation(mSeenLast);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_sendSeenForLastReadMessage"), orig, method_getTypeEncoding(mSeenLast));
+                method_setImplementation(mSeenLast, (IMP)hook_sendSeenForLastReadMessage);
+            }
+
+            Method mSeenMsg = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendSeenMessageWithChatEntity:"));
+            if (mSeenMsg) {
+                IMP orig = method_getImplementation(mSeenMsg);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_sendSeenMessageWithChatEntity:"), orig, method_getTypeEncoding(mSeenMsg));
+                method_setImplementation(mSeenMsg, (IMP)hook_sendSeenMessageWithChatEntity);
+            }
+
+            Method mSeenInfo = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendSeenInfoInboxEntity:"));
+            if (mSeenInfo) {
+                IMP orig = method_getImplementation(mSeenInfo);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_sendSeenInfoInboxEntity:"), orig, method_getTypeEncoding(mSeenInfo));
+                method_setImplementation(mSeenInfo, (IMP)hook_sendSeenInfoInboxEntity);
+            }
+        }
+
+        // Hook FeatureManager (Hide Typing)
+        Class featMgrCls = objc_getClass("FeatureManager");
+        if (featMgrCls) {
+            Method mTypingFeat = class_getInstanceMethod(featMgrCls, sel_registerName("isEnableTypingMessage"));
+            if (mTypingFeat) {
+                IMP orig = method_getImplementation(mTypingFeat);
+                class_addMethod(featMgrCls, sel_registerName("zaloMod_orig_isEnableTypingMessage"), orig, method_getTypeEncoding(mTypingFeat));
+                method_setImplementation(mTypingFeat, (IMP)hook_isEnableTypingMessage);
             }
         }
 
@@ -678,7 +883,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 4b. Hook All ZStyles (ProfileLegacyUtils, SocialFeatureSetting, StickersBottomSheetPackInfo)
+        // 4b. Hook All ZStyles (ProfileLegacyUtils, SocialFeatureSetting, StickersBottomSheetPackInfo, ZMp3Manager)
         Class legacyUtilsCls = objc_getClass("ProfileLegacyUtils");
         if (legacyUtilsCls) {
             Method mSub = class_getClassMethod(legacyUtilsCls, sel_registerName("isZStyleSubscribed:"));
@@ -751,22 +956,29 @@ static void installAllZaloModHooks(void) {
             if (mOrigPrice) method_setImplementation(mOrigPrice, (IMP)hook_zeroPrice);
         }
 
-        // 5. Hook TTL & Font vào ChatDataManager
-        Class chatDataMgrCls = objc_getClass("ChatDataManager");
-        if (chatDataMgrCls) {
-            Method mSync = class_getInstanceMethod(chatDataMgrCls, sel_registerName("syncMessageWithCurrentDisappearingTTLIfNeed:"));
-            if (mSync) {
-                IMP orig = method_getImplementation(mSync);
-                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_syncMessageWithCurrentDisappearingTTLIfNeed:"), orig, method_getTypeEncoding(mSync));
-                method_setImplementation(mSync, (IMP)hook_syncMessageWithCurrentDisappearingTTLIfNeed);
-            }
+        Class zmp3Cls = objc_getClass("ZMp3Manager");
+        if (zmp3Cls) {
+            Method m1 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusic"));
+            if (m1) method_setImplementation(m1, (IMP)hook_zstyleAlwaysTrue);
 
-            Method mAttach = class_getInstanceMethod(chatDataMgrCls, sel_registerName("attachTTLValueForMessageIfNeed:"));
-            if (mAttach) {
-                IMP orig = method_getImplementation(mAttach);
-                class_addMethod(chatDataMgrCls, sel_registerName("zaloMod_orig_attachTTLValueForMessageIfNeed:"), orig, method_getTypeEncoding(mAttach));
-                method_setImplementation(mAttach, (IMP)hook_attachTTLValueForMessageIfNeed);
-            }
+            Method m2 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusicLocal"));
+            if (m2) method_setImplementation(m2, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m3 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusicRBT"));
+            if (m3) method_setImplementation(m3, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m4 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableShareProfileMusic"));
+            if (m4) method_setImplementation(m4, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m5 = class_getInstanceMethod(zmp3Cls, sel_registerName("autoPlayMyMusic"));
+            if (m5) method_setImplementation(m5, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m6 = class_getInstanceMethod(zmp3Cls, sel_registerName("autoPlayFriendMusic"));
+            if (m6) method_setImplementation(m6, (IMP)hook_zstyleAlwaysTrue);
+
+            Method m7 = class_getInstanceMethod(zmp3Cls, sel_registerName("newFlagEnableProfileMusic"));
+            if (m7) method_setImplementation(m7, (IMP)hook_zstyleAlwaysTrue);
+            NSLog(@"[DucLamXNgBao] Hook ZMp3Manager Profile Music ZStyle thành công!");
         }
 
         NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%!");
