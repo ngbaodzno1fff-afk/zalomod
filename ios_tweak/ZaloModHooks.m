@@ -153,7 +153,7 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 }
 
 // =========================================================================
-// 3. FONT HOOK (12 FONT CHỮ NGHỆ THUẬT, CHỮ TO, CHỮ MÀU KHI GÕ & KHI GỬI)
+// 3. FONT HOOK (15 FONT CHỮ NGHỆ THUẬT, CHỮ TO, ALL MÀU SẮC Ô NHẬP)
 // =========================================================================
 @interface UITextView (ZaloModFontHook)
 @end
@@ -161,11 +161,26 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 @implementation UITextView (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    NSString *textToInsert = text;
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
-        NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
-        [self zaloMod_insertText:converted];
-    } else {
-        [self zaloMod_insertText:text];
+        textToInsert = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+    }
+    [self zaloMod_insertText:textToInsert];
+
+    // Áp dụng Cỡ Chữ (Chữ To)
+    CGFloat customSize = [ZaloModViewController customFontSize];
+    if (customSize > 0) {
+        @try {
+            self.font = [UIFont systemFontOfSize:customSize];
+        } @catch (NSException *e) {}
+    }
+
+    // Áp dụng Màu Chữ Ô Nhập (All Màu & Random)
+    UIColor *customColor = [ZaloModViewController selectedTextColor];
+    if (customColor) {
+        @try {
+            self.textColor = customColor;
+        } @catch (NSException *e) {}
     }
 }
 @end
@@ -176,11 +191,26 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 @implementation UITextField (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    NSString *textToInsert = text;
     if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
-        NSString *converted = [ZaloModFontHelper convertText:text toStyle:selectedFont];
-        [self zaloMod_insertText:converted];
-    } else {
-        [self zaloMod_insertText:text];
+        textToInsert = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+    }
+    [self zaloMod_insertText:textToInsert];
+
+    // Áp dụng Cỡ Chữ (Chữ To)
+    CGFloat customSize = [ZaloModViewController customFontSize];
+    if (customSize > 0) {
+        @try {
+            self.font = [UIFont systemFontOfSize:customSize];
+        } @catch (NSException *e) {}
+    }
+
+    // Áp dụng Màu Chữ Ô Nhập (All Màu & Random)
+    UIColor *customColor = [ZaloModViewController selectedTextColor];
+    if (customColor) {
+        @try {
+            self.textColor = customColor;
+        } @catch (NSException *e) {}
     }
 }
 @end
@@ -354,18 +384,19 @@ static NSInteger hook_ChatEntity_photoQuality(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 6. ÁP DỤNG FONT CHỮ, TTL VÀ ẢNH ORIGINAL VÀO MỌI TIN NHẮN GỬI ĐI (100% HIỆU LỰC)
+// 6. ÁP DỤNG FONT CHỮ, TTL VÀ ẢNH ORIGINAL VÀO MỌI TIN NHẮN GỬI ĐI
+// (CHỈ TTL TIN NHẮN CỦA MÌNH - KHÔNG TTL TIN NHẮN NGƯỜI KHÁC!)
 // =========================================================================
 static BOOL isOutgoingChatMessage(id chat) {
     if (!chat) return NO;
     @try {
+        if ([chat respondsToSelector:sel_registerName("isFromOwner")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isFromOwner"))) {
+            return YES;
+        }
         if ([chat respondsToSelector:sel_registerName("isSending")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isSending"))) {
             return YES;
         }
         if ([chat respondsToSelector:sel_registerName("isInProgressSendingMessage")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isInProgressSendingMessage"))) {
-            return YES;
-        }
-        if ([chat respondsToSelector:sel_registerName("isFromOwner")] && ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isFromOwner"))) {
             return YES;
         }
     } @catch (NSException *e) {}
@@ -375,6 +406,9 @@ static BOOL isOutgoingChatMessage(id chat) {
 static void applyAllModSettingsToOutgoingChat(id chat) {
     if (!chat) return;
     @try {
+        // CHỈ ÁP DỤNG NẾU LÀ TIN NHẮN CỦA MÌNH (OUTGOING / IS FROM OWNER)!
+        if (!isOutgoingChatMessage(chat)) return;
+
         // 1. ÁP DỤNG FONT CHỮ (Chữ To, Chữ Đỏ, Khối Đen, Khoanh Tròn, Random,...)
         NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
         if (selectedFont && ![selectedFont isEqualToString:@"Tắt"]) {
@@ -392,7 +426,7 @@ static void applyAllModSettingsToOutgoingChat(id chat) {
             }
         }
 
-        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d) - CHỈ CHO TIN NHẮN CỦA MÌNH
+        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d) - CHỈ CHO TIN NHẮN CỦA MÌNH!
         NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
         if (ttlSecs > 0) {
             SEL setTtlSel = sel_registerName("setTtl:");
@@ -407,6 +441,39 @@ static void applyAllModSettingsToOutgoingChat(id chat) {
     } @catch (NSException *e) {
         NSLog(@"[DucLamXNgBao] Exception applyAllModSettingsToOutgoingChat: %@", e);
     }
+}
+
+// Hook ChatEntity isExpiredMessage: Đảm bảo tin nhắn tự gán TTL không bị client xóa nhầm trước hạn!
+static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
+    if (!self) return NO;
+    @try {
+        BOOL isOwner = isOutgoingChatMessage(self);
+        if (isOwner) {
+            NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+            if (ttlSecs > 0) {
+                long long createTime = 0;
+                if ([self respondsToSelector:sel_registerName("createTime")]) {
+                    createTime = ((long long (*)(id, SEL))objc_msgSend)(self, sel_registerName("createTime"));
+                } else if ([self respondsToSelector:sel_registerName("time")]) {
+                    createTime = ((long long (*)(id, SEL))objc_msgSend)(self, sel_registerName("time"));
+                }
+
+                if (createTime < 100000000000LL && createTime > 0) {
+                    createTime *= 1000LL; // Đưa về miliseconds
+                }
+
+                long long nowMs = (long long)([[NSDate date] timeIntervalSince1970] * 1000.0);
+                long long targetTTLMs = (long long)ttlSecs * 1000LL;
+
+                if (createTime > 0 && (nowMs < createTime + targetTTLMs)) {
+                    return NO; // CHƯA HẾT HẠN TTL TỰ CHỌN -> CHƯA HỦY TIN NHẮN!
+                }
+            }
+        }
+    } @catch (NSException *e) {}
+
+    BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isExpiredMessage"));
+    return orig ? orig(self, _cmd) : NO;
 }
 
 // Hook ZAChatSendingManager: Nơi gửi đi tất cả tin nhắn & ảnh của người dùng (100% Outgoing)
@@ -526,7 +593,7 @@ static BOOL hook_isEnableTypingMessage(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 8. NATIVE ZALO BUSINESS ACCOUNT HOOK (CHUẨN CHÍNH HÃNG 100%, KHÔNG ĐÈ CHỮ)
+// 8. NATIVE ZALO BUSINESS ACCOUNT HOOK
 // =========================================================================
 static BOOL hook_alwaysTrue(id self, SEL _cmd) {
     return [ZaloModViewController isBugZBusinessEnabled];
@@ -549,7 +616,7 @@ static id hook_backgroundColorBadge(id self, SEL _cmd) {
 }
 
 // =========================================================================
-// 9. BUG ALL ZSTYLES & PROFILE (AN TOÀN TUYỆT ĐỐI, KHÔNG TRẢ DICTIONARY LỖI)
+// 9. BUG ALL ZSTYLES & HIỂN THỊ NHẠC NỀN (PILL PLAYER) TRÊN PROFILE
 // =========================================================================
 static BOOL hook_zstyleAlwaysTrue(id self, SEL _cmd) {
     return [ZaloModViewController isBugZLStyleEnabled];
@@ -571,6 +638,10 @@ static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
     return [ZaloModViewController isBugZLStyleEnabled] ? 1 : 0;
 }
 
+static void hook_voidDoNothing(id self, SEL _cmd) {
+    // Chặn hiển thị Modal Paywall Nâng Cấp Tài Khoản!
+}
+
 // =========================================================================
 // 10. KÍCH HOẠT TOÀN BỘ HOOKS (CHẠY ỔN ĐỊNH 100%, ĐẦY ĐỦ TÁC DỤNG)
 // =========================================================================
@@ -579,7 +650,7 @@ static void installAllZaloModHooks(void) {
     dispatch_once(&onceToken, ^{
         NSLog(@"[DucLamXNgBao] Đang cài đặt Hook chuẩn xác cho Zalo Mod VIP...");
 
-        // 1. Hook Font Chữ vào ô nhập liệu
+        // 1. Hook Font Chữ vào ô nhập liệu (UITextView & UITextField)
         swizzleInstanceMethod([UITextView class], @selector(insertText:), @selector(zaloMod_insertText:));
         swizzleInstanceMethod([UITextField class], @selector(insertText:), @selector(zaloMod_insertText:));
 
@@ -681,7 +752,7 @@ static void installAllZaloModHooks(void) {
             }
         }
 
-        // Hook ChatEntity photoQuality để luôn nhận là Original
+        // Hook ChatEntity photoQuality & isExpiredMessage
         Class chatEntityCls = objc_getClass("ChatEntity");
         if (chatEntityCls) {
             Method mPhotoQ = class_getInstanceMethod(chatEntityCls, sel_registerName("photoQuality"));
@@ -689,6 +760,13 @@ static void installAllZaloModHooks(void) {
                 IMP orig = method_getImplementation(mPhotoQ);
                 class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_photoQuality"), orig, method_getTypeEncoding(mPhotoQ));
                 method_setImplementation(mPhotoQ, (IMP)hook_ChatEntity_photoQuality);
+            }
+
+            Method mExp = class_getInstanceMethod(chatEntityCls, sel_registerName("isExpiredMessage"));
+            if (mExp) {
+                IMP orig = method_getImplementation(mExp);
+                class_addMethod(chatEntityCls, sel_registerName("zaloMod_orig_isExpiredMessage"), orig, method_getTypeEncoding(mExp));
+                method_setImplementation(mExp, (IMP)hook_ChatEntity_isExpiredMessage);
             }
         }
 
@@ -883,7 +961,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 4b. Hook All ZStyles (ProfileLegacyUtils, SocialFeatureSetting, StickersBottomSheetPackInfo, ZMp3Manager)
+        // 4b. Hook All ZStyles & Profile Music (ProfileLegacyUtils, SocialFeatureSetting, StickersBottomSheetPackInfo, ZMp3Manager, Swift ZStyle Models)
         Class legacyUtilsCls = objc_getClass("ProfileLegacyUtils");
         if (legacyUtilsCls) {
             Method mSub = class_getClassMethod(legacyUtilsCls, sel_registerName("isZStyleSubscribed:"));
@@ -979,6 +1057,44 @@ static void installAllZaloModHooks(void) {
             Method m7 = class_getInstanceMethod(zmp3Cls, sel_registerName("newFlagEnableProfileMusic"));
             if (m7) method_setImplementation(m7, (IMP)hook_zstyleAlwaysTrue);
             NSLog(@"[DucLamXNgBao] Hook ZMp3Manager Profile Music ZStyle thành công!");
+        }
+
+        // Swift ZStyle Package & Profile Info Models Hook
+        Class zstylePkgInfoCls = objc_getClass("_TtC12ZStyleConfig17ZStylePackageInfo");
+        if (zstylePkgInfoCls) {
+            Method mValid = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("isValid"));
+            if (mValid) method_setImplementation(mValid, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mPkg = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("packageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+
+            Method mPaid = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("isPaidPackage"));
+            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        Class zstyleProfInfoCls = objc_getClass("_TtC9ProfileUI17ZStyleProfileInfo");
+        if (zstyleProfInfoCls) {
+            Method mPkg = class_getInstanceMethod(zstyleProfInfoCls, sel_registerName("packageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+
+            Method mUser = class_getInstanceMethod(zstyleProfInfoCls, sel_registerName("isZStyleUser"));
+            if (mUser) method_setImplementation(mUser, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        Class musicDecisionCls = objc_getClass("_TtC12ProfileMusic27ProfileMusicDisplayDecision");
+        if (musicDecisionCls) {
+            Method mViewer = class_getInstanceMethod(musicDecisionCls, sel_registerName("isViewerZStyle"));
+            if (mViewer) method_setImplementation(mViewer, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mProfUI = class_getInstanceMethod(musicDecisionCls, sel_registerName("isZStyleProfileUI"));
+            if (mProfUI) method_setImplementation(mProfUI, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        // Chặn mở Modal Paywall ZStyle Nâng Cấp Tài Khoản
+        Class paywallRouterCls = objc_getClass("ZCFReactionPaywallRouter");
+        if (paywallRouterCls) {
+            Method mOpen = class_getInstanceMethod(paywallRouterCls, sel_registerName("openPaywallWithEntrypoint:conversationType:"));
+            if (mOpen) method_setImplementation(mOpen, (IMP)hook_voidDoNothing);
         }
 
         NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%%!");
