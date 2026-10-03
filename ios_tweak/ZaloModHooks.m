@@ -1190,13 +1190,13 @@ static void installAllZaloModHooks(void) {
         // -----------------------------------------------------------------------
         // ProfileFlowManager & FriendFlowManager - Business account check
         // -----------------------------------------------------------------------
-        Class profFlowCls = objc_getClass("ProfileFlowManager");
-        if (profFlowCls) {
+        Class profFlowCls_new = objc_getClass("ProfileFlowManager");
+        if (profFlowCls_new) {
             Method m = class_getInstanceMethod(profFlowCls, sel_registerName("checkUserIsBusinessAccount:"));
             if (m) method_setImplementation(m, (IMP)hook_checkUserIsBusinessAccount);
         }
-        Class friendFlowCls = objc_getClass("FriendFlowManager");
-        if (friendFlowCls) {
+        Class friendFlowCls_new = objc_getClass("FriendFlowManager");
+        if (friendFlowCls_new) {
             Method m = class_getInstanceMethod(friendFlowCls, sel_registerName("checkUserIsBusinessAccount:"));
             if (m) method_setImplementation(m, (IMP)hook_checkUserIsBusinessAccount);
         }
@@ -1204,8 +1204,8 @@ static void installAllZaloModHooks(void) {
         // -----------------------------------------------------------------------
         // BALabelInfo - ZBusiness Pro badge label
         // -----------------------------------------------------------------------
-        Class baInfoCls = objc_getClass("_TtC6CORBiz11BALabelInfo") ?: objc_getClass("CORBiz11BALabelInfo");
-        if (baInfoCls) {
+        Class baInfoCls_new = objc_getClass("_TtC6CORBiz11BALabelInfo") ?: objc_getClass("CORBiz11BALabelInfo");
+        if (baInfoCls_new) {
             Method m1 = class_getInstanceMethod(baInfoCls, sel_registerName("hasTitleBadge"));
             if (m1) method_setImplementation(m1, (IMP)hook_alwaysTrue);
             Method m2 = class_getInstanceMethod(baInfoCls, sel_registerName("titleBadge"));
@@ -1374,8 +1374,8 @@ static void installAllZaloModHooks(void) {
         // -----------------------------------------------------------------------
         // ZCF QualityPickerConfig - Original Photo/Video
         // -----------------------------------------------------------------------
-        Class qpConfigCls = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
-        if (qpConfigCls) {
+        Class qpConfigCls_new = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
+        if (qpConfigCls_new) {
             Method mSendOrig = class_getClassMethod(qpConfigCls, sel_registerName("enableSendOriginal"));
             if (mSendOrig) method_setImplementation(mSendOrig, (IMP)hook_alwaysTrue);
             Method mBadge = class_getClassMethod(qpConfigCls, sel_registerName("originalBadge"));
@@ -1387,8 +1387,8 @@ static void installAllZaloModHooks(void) {
         }
 
         // ZSharedData - Ảnh gốc HD
-        Class zSharedCls = objc_getClass("ZSharedData");
-        if (zSharedCls) {
+        Class zSharedCls_new = objc_getClass("ZSharedData");
+        if (zSharedCls_new) {
             Method mSetting = class_getInstanceMethod(zSharedCls, sel_registerName("settingOriginalPhotoQuality"));
             if (mSetting) method_setImplementation(mSetting, (IMP)hook_alwaysTrue);
             Method mLimitSize = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoSize"));
