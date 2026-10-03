@@ -16,6 +16,9 @@ static NSString * const kPrefHideTyping     = @"ZaloMod_HideTyping";
 static NSString * const kPrefBugOriginal    = @"ZaloMod_BugOriginal";
 static NSString * const kPrefBugZBusiness   = @"ZaloMod_BugZBusiness";
 static NSString * const kPrefBugZLStyle     = @"ZaloMod_BugZLStyle";
+static NSString * const kPrefAdBlock        = @"ZaloMod_AdBlock";
+static NSString * const kPrefUnlimitedMedia = @"ZaloMod_UnlimitedMedia";
+static NSString * const kPrefUnlockRBT      = @"ZaloMod_UnlockRBT";
 static NSString * const kPrefSelectedFont       = @"ZaloMod_SelectedFont";
 static NSString * const kPrefCustomFontSize     = @"ZaloMod_CustomFontSize";
 static NSString * const kPrefSelectedTextColor  = @"ZaloMod_SelectedTextColor";
@@ -133,6 +136,21 @@ static ZaloModViewController *_sharedMenuVC = nil;
 
 + (BOOL)isBugZLStyleEnabled {
     id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefBugZLStyle];
+    return (val == nil) ? YES : [val boolValue];
+}
+
++ (BOOL)isAdBlockEnabled {
+    id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefAdBlock];
+    return (val == nil) ? YES : [val boolValue];
+}
+
++ (BOOL)isUnlimitedMediaEnabled {
+    id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefUnlimitedMedia];
+    return (val == nil) ? YES : [val boolValue];
+}
+
++ (BOOL)isUnlockRBTEnabled {
+    id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefUnlockRBT];
     return (val == nil) ? YES : [val boolValue];
 }
 
@@ -454,7 +472,14 @@ static ZaloModViewController *_sharedMenuVC = nil;
 
     y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Nhãn ZBusiness Pro Doanh Nghiệp" subtitle:@"Hiển thị tích vàng xác thực ZBusiness trên profile" initial:[ZaloModViewController isBugZBusinessEnabled] action:@selector(toggleBugZBusiness:)];
 
+    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Chặn Quảng Cáo In-App (AdBlock VIP)" subtitle:@"Tự động lọc & ẩn sạch toàn bộ banner quảng cáo trong Zalo" initial:[ZaloModViewController isAdBlockEnabled] action:@selector(toggleAdBlock:)];
+
+    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Bỏ Giới Hạn Video & File (2GB+ Turbo)" subtitle:@"Gửi video độ dài vô tận, không nén mờ và gửi file dung lượng lớn 2GB+" initial:[ZaloModViewController isUnlimitedMediaEnabled] action:@selector(toggleUnlimitedMedia:)];
+
+    y = [self addSwitchRowToView:self.tabZBusinessView y:y title:@"Mở Khóa Nhạc Chờ RBT & Zing MP3 Full" subtitle:@"Mở khóa phát nhạc Zing MP3 chất lượng cao & cấu hình Ring Back Tone" initial:[ZaloModViewController isUnlockRBTEnabled] action:@selector(toggleUnlockRBT:)];
+
     self.tabZBusinessView.frame = CGRectMake(0, 0, contentW, y + 20);
+
 
     // =========================================================================
     // TAB 3: QUẢN LÝ NHÓM
@@ -855,6 +880,22 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefBugZLStyle];
     [self showToast:s.isOn ? @"👑 BẬT Bug All ZStyles & Hiện Nhạc Nền (Pill Player)" : @"❌ TẮT Bug ZStyles"];
 }
+
+- (void)toggleAdBlock:(UISwitch *)s {
+    [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefAdBlock];
+    [self showToast:s.isOn ? @"🛡️ BẬT Chặn Quảng Cáo In-App (AdBlock VIP)" : @"❌ TẮT Chặn Quảng Cáo"];
+}
+
+- (void)toggleUnlimitedMedia:(UISwitch *)s {
+    [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefUnlimitedMedia];
+    [self showToast:s.isOn ? @"⚡ BẬT Bỏ Giới Hạn Video & Gửi File 2GB+" : @"❌ TẮT Bỏ Giới Hạn Media"];
+}
+
+- (void)toggleUnlockRBT:(UISwitch *)s {
+    [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefUnlockRBT];
+    [self showToast:s.isOn ? @"🎵 BẬT Mở Khóa Nhạc Chờ RBT & Zing MP3 Full" : @"❌ TẮT Mở Khóa RBT"];
+}
+
 
 - (void)toggleGhostSeen:(UISwitch *)s {
     [[NSUserDefaults standardUserDefaults] setBool:s.isOn forKey:kPrefGhostSeen];
