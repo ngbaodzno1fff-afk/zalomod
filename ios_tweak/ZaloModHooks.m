@@ -298,9 +298,43 @@ static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id 
     if (orig) orig(self, _cmd, chat);
 }
 
+// Bot Message Listener: Lắng nghe và xử lý tin nhắn cho Bot tự động
+static void hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id self, SEL _cmd, id chat, id dict) {
+    void (*orig)(id, SEL, id, id) = (void (*)(id, SEL, id, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processMessageWithChatEntity:itemDict:"));
+    if (orig) orig(self, _cmd, chat, dict);
+
+    if (chat && [ZaloModViewController isBotRunning]) {
+        @try {
+            NSString *msg = nil;
+            if ([chat respondsToSelector:sel_registerName("message")]) {
+                msg = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("message"));
+            }
+            NSString *fuid = nil;
+            if ([chat respondsToSelector:sel_registerName("fuid")]) {
+                id raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("fuid"));
+                if (raw) fuid = [NSString stringWithFormat:@"%@", raw];
+            }
+            NSString *tuid = nil;
+            if ([chat respondsToSelector:sel_registerName("tuid")]) {
+                id raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("tuid"));
+                if (raw) tuid = [NSString stringWithFormat:@"%@", raw];
+            }
+            BOOL isGroup = NO;
+            if ([chat respondsToSelector:sel_registerName("isGroup")]) {
+                isGroup = ((BOOL (*)(id, SEL))objc_msgSend)(chat, sel_registerName("isGroup"));
+            }
+
+            if (msg && msg.length > 0) {
+                [ZaloModViewController processBotIncomingMessage:msg fromUid:fuid toThreadId:tuid isGroup:isGroup chatVC:nil];
+            }
+        } @catch (NSException *e) {}
+    }
+}
+
 // =========================================================================
 // 5. MỞ KHÓA GỬI ẢNH GỐC & HD (TỰ ĐỘNG GỬI ORIGINAL KHÔNG CẦN MUA ZCLOUD)
 // =========================================================================
+
 static void markChatAsOriginalIfPhoto(id chat) {
     if (!chat || ![ZaloModViewController isBugOriginalEnabled]) return;
     @try {
@@ -502,6 +536,7 @@ static NSString *hook_BaseChatTVC_getTextToSend(id self, SEL _cmd) {
 }
 
 static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _cmd, NSString *text, BOOL needCreateBubble) {
+    [ZaloModViewController setActiveChatVC:self];
     NSString *styledText = text;
     if (text && text.length > 0) {
         NSString *effFont = getEffectiveFont();
@@ -514,7 +549,9 @@ static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _
 }
 
 static id hook_BaseChatTVC_createChatToSendWithMessage(id self, SEL _cmd, NSString *message, int mediaType, NSString *clientMsgId) {
+    [ZaloModViewController setActiveChatVC:self];
     NSString *styledMsg = message;
+
     if (message && message.length > 0) {
         NSString *effFont = getEffectiveFont();
         if (effFont) {
@@ -808,7 +845,15 @@ static void installAllZaloModHooks(void) {
                 class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processUpdateUndo:"), origImp, method_getTypeEncoding(updateUndoM));
                 method_setImplementation(updateUndoM, (IMP)hook_ChatOperationProcessor_processUpdateUndo);
             }
+
+            Method msgProcM = class_getInstanceMethod(chatOpProcCls, sel_registerName("processMessageWithChatEntity:itemDict:"));
+            if (msgProcM) {
+                IMP origImp = method_getImplementation(msgProcM);
+                class_addMethod(chatOpProcCls, sel_registerName("zaloMod_orig_processMessageWithChatEntity:itemDict:"), origImp, method_getTypeEncoding(msgProcM));
+                method_setImplementation(msgProcM, (IMP)hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict);
+            }
         }
+
 
         // 3. Mở khóa giao diện và cấu hình gửi ảnh Original & HD không bị nén
         Class pickerVCCls = objc_getClass("_TtC19CommFeatureBusiness27QualityPickerViewController") ?: objc_getClass("QualityPickerViewController");
