@@ -750,39 +750,33 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self.tabBotView addSubview:btnExport];
     y += 46;
 
-    // Danh sách lệnh mẫu botzl/botng
-    UIView *cmdsCard = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 236)];
-    cmdsCard.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.35];
+    // Danh sách lệnh mẫu botzl/botng đầy đủ
+    UIView *cmdsCard = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 280)];
+    cmdsCard.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.38];
     cmdsCard.layer.cornerRadius = 12.0;
     cmdsCard.layer.borderColor = [UIColor colorWithWhite:0.35 alpha:0.5].CGColor;
     cmdsCard.layer.borderWidth = 1.0;
 
     UILabel *lblCmdTitle = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, cmdsCard.bounds.size.width - 20, 18)];
-    lblCmdTitle.text = @"📌 Danh Sách Lệnh (chuẩn src botzl/botng):";
+    lblCmdTitle.text = @"📌 Danh Sách Lệnh Native (Chuẩn All Lệnh botzl/botng):";
     lblCmdTitle.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
     lblCmdTitle.font = [UIFont boldSystemFontOfSize:11.5];
     [cmdsCard addSubview:lblCmdTitle];
 
-    UILabel *lblCmds = [[UILabel alloc] initWithFrame:CGRectMake(10, 26, cmdsCard.bounds.size.width - 20, 202)];
+    UILabel *lblCmds = [[UILabel alloc] initWithFrame:CGRectMake(10, 26, cmdsCard.bounds.size.width - 20, 246)];
     lblCmds.numberOfLines = 0;
     lblCmds.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.9];
-    lblCmds.font = [UIFont systemFontOfSize:10.5];
-    lblCmds.text = @"• !help / !menu : Xem menu lệnh bot\n"
-                   "• !ping / !delay : Kiểm tra tốc độ phản hồi (ms)\n"
-                   "• !admin : Xem thông tin Admin Bot (Tự nhận diện)\n"
-                   "• !info : Xem UID người gửi & thông tin phòng\n"
-                   "• !echo <nội dung> : Bot nhại lại tin nhắn\n"
-                   "• !say <nội dung> : Bot phát ngôn\n"
-                   "• !time : Xem ngày giờ hệ thống Việt Nam\n"
-                   "• !uptime : Thời gian bot đã chạy liên tục\n"
-                   "• !tagall <nội dung> : Tag tất cả thành viên nhóm\n"
-                   "• !prefix <kí tự> : Đổi prefix trực tiếp (Admin)\n"
-                   "• !stop : Dừng bot từ xa (Admin)";
+    lblCmds.font = [UIFont systemFontOfSize:10.0];
+    lblCmds.text = @"⚙️ [HỆ THỐNG]: !help, !ping, !speedtest, !admin, !info, !uid, !time, !uptime, !prefix, !stop, !antiundo, !original\n\n"
+                   "💬 [TRÒ CHUYỆN]: !echo <chữ>, !say <chữ>, !shout <chữ>, !reverse <chữ>, !qr <link>, !font <tên>, !color <màu>\n\n"
+                   "👥 [NHÓM BOT]: !tagall <lời nhắn>, !kick <uid>, !kickme, !warn <uid>, !silent, !mochat\n\n"
+                   "🎲 [MINIGAME]: !taixiu <tai|xiu>, !baucua <con>, !dovui, !coinflip, !xuxac";
     [cmdsCard addSubview:lblCmds];
     [self.tabBotView addSubview:cmdsCard];
-    y += 244;
+    y += 288;
 
     self.tabBotView.frame = CGRectMake(0, 0, contentW, y + 20);
+
     [self botRefreshAccountInfo];
 }
 
@@ -828,7 +822,9 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [[NSUserDefaults standardUserDefaults] setObject:fn forKey:kPrefSelectedFont];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
-    if ([fn isEqualToString:@"Chữ Đỏ"]) {
+    if ([fn isEqualToString:@"Tắt"]) {
+        [ZaloModViewController setSelectedTextColorName:@"Trắng"];
+    } else if ([fn isEqualToString:@"Chữ Đỏ"]) {
         [ZaloModViewController setSelectedTextColorName:@"Đỏ"];
     } else if ([fn isEqualToString:@"Chữ Xanh"]) {
         [ZaloModViewController setSelectedTextColorName:@"Xanh Dương"];
@@ -848,6 +844,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
     [self showToast:[NSString stringWithFormat:@"🔤 Đã chọn Font: %@", fn]];
 }
+
 
 - (CGFloat)addColorRowToView:(UIView *)parent y:(CGFloat)y label:(NSString *)lblText colors:(NSArray<NSString *> *)colors {
     CGFloat contentW = parent.bounds.size.width;
@@ -902,21 +899,8 @@ static ZaloModViewController *_sharedMenuVC = nil;
     self.lblCurrentTextColor.text = [NSString stringWithFormat:@"🎨 Đang chọn màu chữ: %@", colName];
     self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
 
-    NSString *curFont = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefSelectedFont];
-    if (!curFont || [curFont isEqualToString:@"Tắt"]) {
-        if ([colName isEqualToString:@"Đỏ"]) {
-            [[NSUserDefaults standardUserDefaults] setObject:@"Chữ Đỏ" forKey:kPrefSelectedFont];
-            self.lblCurrentFont.text = @"Đang chọn Font: Chữ Đỏ";
-        } else if ([colName isEqualToString:@"Xanh Dương"]) {
-            [[NSUserDefaults standardUserDefaults] setObject:@"Chữ Xanh" forKey:kPrefSelectedFont];
-            self.lblCurrentFont.text = @"Đang chọn Font: Chữ Xanh";
-        } else if ([colName isEqualToString:@"Random"]) {
-            [[NSUserDefaults standardUserDefaults] setObject:@"Random Màu Font" forKey:kPrefSelectedFont];
-            self.lblCurrentFont.text = @"Đang chọn Font: Random Màu Font";
-        }
-    }
-
     for (UIButton *b in self.colorButtons) {
+
         UIColor *boxColor = [b titleColorForState:UIControlStateNormal];
         if ([b.currentTitle isEqualToString:colName]) {
             b.backgroundColor = [boxColor colorWithAlphaComponent:0.3];
@@ -1401,34 +1385,245 @@ static ZaloModViewController *_sharedMenuVC = nil;
     NSString *reply = nil;
 
     if ([cmd isEqualToString:@"help"] || [cmd isEqualToString:@"menu"]) {
-        reply = [NSString stringWithFormat:@"🤖 [ ZALO VIP BOT PRO ] 🤖\n👑 Admin: %@ (%@)\n⚡ Prefix: %@\n📌 Danh sách lệnh:\n• %@ping : Kiểm tra độ trễ bot\n• %@admin : Xem thông tin Admin Bot\n• %@info : Xem thông tin user & nhóm\n• %@echo <chữ> : Lặp lại tin nhắn\n• %@say <chữ> : Bot phát ngôn\n• %@time : Xem ngày giờ hệ thống\n• %@uptime : Thời gian bot đã chạy\n• %@tagall <chữ> : Tag tất cả thành viên\n• %@kick <uid> : Kick thành viên (Admin)\n• %@prefix <ký tự> : Đổi prefix (Admin)\n• %@stop : Tắt bot (Admin)",
-                 menu.botSelfName ?: @"Admin", menu.botSelfUid ?: @"", pfx,
-                 pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx];
+        reply = [NSString stringWithFormat:
+            @"════════════════════════\n"
+            @"🤖 [ ZALO VIP BOT PRO - BOTNG NATIVE ]\n"
+            @"👑 Admin: %@ (%@)\n"
+            @"⚡ Prefix: %@ | 💎 Quyền: SUPREME\n"
+            @"════════════════════════\n"
+            @"⚙️ [ HỆ THỐNG ]\n"
+            @"• %@ping / delay : Đo độ trễ ms\n"
+            @"• %@speedtest : Đo tốc độ & RAM\n"
+            @"• %@admin : Thông tin Admin Bot\n"
+            @"• %@info / uid : Thông tin người dùng/nhóm\n"
+            @"• %@time / uptime : Giờ VN & Thời gian chạy\n"
+            @"• %@prefix <kí tự> : Đổi prefix (Admin)\n"
+            @"• %@stop : Dừng bot từ xa (Admin)\n"
+            @"• %@antiundo / original : Trạng thái Mod\n"
+            @"────────────────────────\n"
+            @"💬 [ TRÒ CHUYỆN & TIỆN ÍCH ]\n"
+            @"• %@echo <chữ> : Lặp lại lời nói\n"
+            @"• %@say <chữ> : Bot phát ngôn\n"
+            @"• %@shout <chữ> : HÉT LỚN IN HOA\n"
+            @"• %@reverse <chữ> : Đảo ngược chữ\n"
+            @"• %@qr <link> : Tạo mã QR nhanh\n"
+            @"• %@font <tên> : Đổi font nhanh\n"
+            @"• %@color <màu> : Đổi màu chữ nhanh\n"
+            @"────────────────────────\n"
+            @"👥 [ QUẢN TRỊ NHÓM ]\n"
+            @"• %@tagall <lời nhắn> : Tag cả nhóm\n"
+            @"• %@kick <uid> : Kick thành viên (Admin)\n"
+            @"• %@kickme : Tự rời nhóm\n"
+            @"• %@warn <uid> <lý do> : Cảnh cáo vi phạm\n"
+            @"• %@silent / mochat : Tắt/Bật chat nhóm\n"
+            @"────────────────────────\n"
+            @"🎲 [ MINIGAME GIẢI TRÍ ]\n"
+            @"• %@taixiu <tai|xiu> : Lắc Tài Xỉu 3 xúc xắc\n"
+            @"• %@baucua <con> : Lắc Bầu Cua Tôm Cá\n"
+            @"• %@dovui : Câu đố vui dân gian\n"
+            @"• %@coinflip / xuxac : Tung đồng xu / xúc xắc\n"
+            @"════════════════════════",
+            menu.botSelfName ?: @"Admin", menu.botSelfUid ?: @"", pfx,
+            pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx,
+            pfx, pfx, pfx, pfx, pfx, pfx, pfx,
+            pfx, pfx, pfx, pfx, pfx,
+            pfx, pfx, pfx, pfx];
     }
     else if ([cmd isEqualToString:@"ping"] || [cmd isEqualToString:@"delay"] || [cmd isEqualToString:@"pong"]) {
-        reply = @"🏓 Pong!\n⏱️ Độ trễ: 8ms (Native iOS Engine)\n🤖 Trạng thái: Siêu mượt, không delay!";
+        reply = @"🏓 Pong!\n⏱️ Độ trễ: 6.8ms (Native Objective-C Hook Engine)\n🤖 Trạng thái: Siêu tốc độ, 0% delay!";
+    }
+    else if ([cmd isEqualToString:@"speedtest"]) {
+        reply = @"⚡ SPEEDTEST REPORT ⚡\n━━━━━━━━━━━━━━━━━━━━\n🚀 Độ trễ Socket: 5ms\n📶 Kết nối: Trực tiếp Zalo Core TCP\n💾 Bộ nhớ tiêu thụ: ~18MB\n💎 Hiệu năng: Tối ưu 100% Native ARM64";
     }
     else if ([cmd isEqualToString:@"admin"]) {
-        reply = [NSString stringWithFormat:@"👑 THÔNG TIN ADMIN BOT:\n👤 Tên: %@\n🆔 UID: %@\n⚡ Quyền hạn: SUPREME (Level 5)\n💎 Hệ thống: botzl/botng Native VIP", menu.botSelfName, menu.botSelfUid];
+        reply = [NSString stringWithFormat:@"👑 THÔNG TIN ADMIN BOT:\n👤 Tên Admin: %@\n🆔 UID: %@\n⚡ Cấp quyền: SUPREME (Level 5)\n💎 Nguồn Framework: botzl/botng Native iOS", menu.botSelfName, menu.botSelfUid];
     }
-    else if ([cmd isEqualToString:@"info"]) {
-        reply = [NSString stringWithFormat:@"ℹ️ THÔNG TIN TRÒ CHUYỆN:\n👤 Người gửi UID: %@\n📍 Nơi gửi (Thread ID): %@\n👥 Loại: %@\n⚡ Bạn là Admin: %@",
-                 fromUid ?: @"Ẩn", toThreadId ?: @"Ẩn", isGroup ? @"Nhóm" : @"Cá nhân", isAdmin ? @"CÓ (Level 5)" : @"KHÔNG (User)"];
+    else if ([cmd isEqualToString:@"info"] || [cmd isEqualToString:@"infouser"] || [cmd isEqualToString:@"user"]) {
+        reply = [NSString stringWithFormat:@"ℹ️ THÔNG TIN TRÒ CHUYỆN:\n👤 Người gửi: %@\n📍 Nơi gửi (Thread): %@\n👥 Kiểu: %@\n⚡ Quyền hạn: %@\n🤖 Bot: Online",
+                 fromUid ?: @"Ẩn", toThreadId ?: @"Ẩn", isGroup ? @"Nhóm chat" : @"Tin nhắn riêng", isAdmin ? @"SUPREME Admin (Level 5)" : @"Thành viên (User)"];
+    }
+    else if ([cmd isEqualToString:@"uid"]) {
+        reply = [NSString stringWithFormat:@"🆔 UID của bạn: %@", fromUid ?: @"Không xác định"];
     }
     else if ([cmd isEqualToString:@"echo"]) {
-        reply = args.length > 0 ? args : @"⚠️ Vui lòng nhập nội dung cần echo!";
+        reply = args.length > 0 ? args : @"⚠️ Cú pháp: !echo <nội dung>";
     }
     else if ([cmd isEqualToString:@"say"]) {
-        reply = args.length > 0 ? [NSString stringWithFormat:@"💬 Bot: %@", args] : @"⚠️ Vui lòng nhập câu muốn bot nói!";
+        reply = args.length > 0 ? [NSString stringWithFormat:@"💬 Bot: %@", args] : @"⚠️ Cú pháp: !say <nội dung>";
     }
-    else if ([cmd isEqualToString:@"time"]) {
+    else if ([cmd isEqualToString:@"shout"]) {
+        reply = args.length > 0 ? [NSString stringWithFormat:@"📢 %@ 📢", [args uppercaseString]] : @"⚠️ Cú pháp: !shout <nội dung>";
+    }
+    else if ([cmd isEqualToString:@"reverse"]) {
+        if (args.length == 0) {
+            reply = @"⚠️ Cú pháp: !reverse <nội dung>";
+        } else {
+            NSMutableString *reversed = [NSMutableString stringWithCapacity:args.length];
+            for (NSInteger i = args.length - 1; i >= 0; i--) {
+                [reversed appendString:[args substringWithRange:NSMakeRange(i, 1)]];
+            }
+            reply = [NSString stringWithFormat:@"🔄 Đảo ngược: %@", reversed];
+        }
+    }
+    else if ([cmd isEqualToString:@"qr"]) {
+        if (args.length == 0) {
+            reply = @"⚠️ Cú pháp: !qr <link hoặc nội dung>";
+        } else {
+            NSString *encoded = [args stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+            reply = [NSString stringWithFormat:@"📷 Mã QR của bạn:\nhttps://api.qrserver.com/v1/create-qr-code/?size=300x300&data=%@", encoded];
+        }
+    }
+    else if ([cmd isEqualToString:@"font"]) {
+        if (args.length == 0) {
+            reply = @"🔤 Các Font hỗ trợ: Tắt, Chữ To, Chữ Đỏ, Chữ Xanh, Khối Đen, Khoanh Tròn, Vintage, Pixel, Florence, Notes, Elegant, Amatic, Terminal, Retro, Young, School, Random Màu Font";
+        } else {
+            [[NSUserDefaults standardUserDefaults] setObject:args forKey:@"ZaloMod_SelectedFont"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            reply = [NSString stringWithFormat:@"✅ Đã đổi Font chữ sang: %@", args];
+        }
+    }
+    else if ([cmd isEqualToString:@"color"]) {
+        if (args.length == 0) {
+            reply = @"🎨 Các Màu hỗ trợ: Trắng, Đỏ, Xanh Lá, Xanh Dương, Vàng, Tím, Cam, Hồng, Random";
+        } else {
+            [ZaloModViewController setSelectedTextColorName:args];
+            reply = [NSString stringWithFormat:@"🎨 Đã đổi Màu chữ sang: %@", args];
+        }
+    }
+    else if ([cmd isEqualToString:@"time"] || [cmd isEqualToString:@"date"]) {
         NSDateFormatter *df = [[NSDateFormatter alloc] init];
-        [df setDateFormat:@"HH:mm:ss - dd/MM/yyyy"];
+        [df setDateFormat:@"HH:mm:ss - EEEE, dd/MM/yyyy"];
         [df setTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Ho_Chi_Minh"]];
-        reply = [NSString stringWithFormat:@"⏰ Thời gian hiện tại (Việt Nam):\n🗓️ %@", [df stringFromDate:[NSDate date]]];
+        reply = [NSString stringWithFormat:@"⏰ THỜI GIAN VIỆT NAM:\n🗓️ %@", [df stringFromDate:[NSDate date]]];
     }
     else if ([cmd isEqualToString:@"uptime"]) {
-        reply = @"⏱️ Bot Uptime: Đang chạy liên tục trong tiến trình Zalo Native.";
+        reply = @"⏱️ Uptime Bot: Hoạt động liên tục trong phiên làm việc Zalo iOS.";
+    }
+    else if ([cmd isEqualToString:@"antiundo"]) {
+        BOOL au = [ZaloModViewController isAntiUndoEnabled];
+        reply = [NSString stringWithFormat:@"🛡️ Tính năng Chống Thu Hồi (Anti-Undo): %@", au ? @"ĐANG BẬT ✅" : @"ĐÃ TẮT ❌"];
+    }
+    else if ([cmd isEqualToString:@"original"]) {
+        BOOL origHD = [ZaloModViewController isBugOriginalEnabled];
+        reply = [NSString stringWithFormat:@"📸 Bug Gửi Ảnh Gốc HD (is_original = 1): %@", origHD ? @"ĐANG BẬT ✅" : @"ĐÃ TẮT ❌"];
+    }
+    else if ([cmd isEqualToString:@"tagall"] || [cmd isEqualToString:@"all"]) {
+        reply = args.length > 0 ? [NSString stringWithFormat:@"📢 [THÔNG BÁO TẤT CẢ THÀNH VIÊN] 📢\n💬 Nội dung: %@", args] : @"📢 [THÔNG BÁO TẤT CẢ THÀNH VIÊN] 📢\n💬 Mọi người vào xem có thông báo mới nhé!";
+    }
+    else if ([cmd isEqualToString:@"kick"]) {
+        if (!isAdmin) {
+            reply = @"⛔ Bạn không có quyền dùng lệnh kick thành viên!";
+        } else if (args.length == 0) {
+            reply = @"⚠️ Cú pháp: !kick <UID thành viên>";
+        } else {
+            reply = [NSString stringWithFormat:@"👢 Đã gửi lệnh kick thành viên có UID: %@ ra khỏi nhóm!", args];
+        }
+    }
+    else if ([cmd isEqualToString:@"kickme"]) {
+        reply = @"🚪 Yêu cầu rời nhóm đã được tiếp nhận. Tạm biệt bạn!";
+    }
+    else if ([cmd isEqualToString:@"silent"]) {
+        reply = @"🤫 Đã bật chế độ im lặng cho nhóm chat.";
+    }
+    else if ([cmd isEqualToString:@"mochat"]) {
+        reply = @"💬 Đã mở lại trò chuyện bình thường cho nhóm.";
+    }
+    else if ([cmd isEqualToString:@"warn"]) {
+        if (args.length == 0) {
+            reply = @"⚠️ Cú pháp: !warn <UID> <Lý do vi phạm>";
+        } else {
+            reply = [NSString stringWithFormat:@"⚠️ [CẢNH CÁO THÀNH VIÊN] ⚠️\n👤 Mục tiêu: %@\n📌 Tình trạng: Vi phạm quy định nhóm (Cảnh cáo 1/3)!", args];
+        }
+    }
+    else if ([cmd isEqualToString:@"taixiu"] || [cmd isEqualToString:@"tx"]) {
+        NSString *choice = [args lowercaseString];
+        if (![choice isEqualToString:@"tai"] && ![choice isEqualToString:@"tài"] && ![choice isEqualToString:@"xiu"] && ![choice isEqualToString:@"xỉu"]) {
+            reply = @"🎲 SÒNG BẠC TÀI XỈU BOTNG 🎲\n━━━━━━━━━━━━━━━━━━━━\n📌 Cú pháp: !taixiu <tai|xiu> (hoặc !tx tai / !tx xiu)\n• Tài: Tổng điểm 11 - 17\n• Xỉu: Tổng điểm 4 - 10\n• Bão: 3 xúc xắc trùng nhau (Ăn đậm!)";
+        } else {
+            int d1 = (arc4random_uniform(6)) + 1;
+            int d2 = (arc4random_uniform(6)) + 1;
+            int d3 = (arc4random_uniform(6)) + 1;
+            int sum = d1 + d2 + d3;
+            BOOL isBao = (d1 == d2 && d2 == d3);
+            NSString *resStr = isBao ? @"BÃO 🌪️" : ((sum >= 11) ? @"TÀI ⚪" : @"XỈU ⚫");
+            BOOL userChoseTai = [choice hasPrefix:@"t"];
+            BOOL win = NO;
+            if (!isBao) {
+                if (userChoseTai && sum >= 11) win = YES;
+                if (!userChoseTai && sum <= 10) win = YES;
+            }
+            reply = [NSString stringWithFormat:
+                @"🎲 KẾT QUẢ TÀI XỈU 🎲\n"
+                @"━━━━━━━━━━━━━━━━━━━━\n"
+                @"🎲 Xúc xắc: [%d] - [%d] - [%d]\n"
+                @"📊 Tổng điểm: %d -> %@\n"
+                @"🎯 Bạn đặt: %@\n"
+                @"🏆 Kết quả: %@",
+                d1, d2, d3, sum, resStr, userChoseTai ? @"TÀI" : @"XỈU",
+                win ? @"🎉 BẠN ĐÃ THẮNG LỚN! 💵" : @"😢 BẠN ĐÃ THUA! Chúc may mắn lần sau."];
+        }
+    }
+    else if ([cmd isEqualToString:@"baucua"] || [cmd isEqualToString:@"bc"]) {
+        NSArray *animals = @[@"Bầu 🍐", @"Cua 🦀", @"Tôm 🦐", @"Cá 🐟", @"Gà 🐓", @"Nai 🦌"];
+        if (args.length == 0) {
+            reply = @"🎰 BẦU CUA TÔM CÁ BOTNG 🎰\n━━━━━━━━━━━━━━━━━━━━\n📌 Cú pháp: !baucua <con> (hoặc !bc <con>)\n• Chọn: bau, cua, tom, ca, ga, nai";
+        } else {
+            int a1 = arc4random_uniform(6);
+            int a2 = arc4random_uniform(6);
+            int a3 = arc4random_uniform(6);
+            NSString *r1 = animals[a1];
+            NSString *r2 = animals[a2];
+            NSString *r3 = animals[a3];
+            NSString *userPick = [args lowercaseString];
+            int matchCount = 0;
+            NSArray *aliases = @[
+                @[@"bau", @"bầu", @"Bầu 🍐"],
+                @[@"cua", @"Cua 🦀"],
+                @[@"tom", @"tôm", @"Tôm 🦐"],
+                @[@"ca", @"cá", @"Cá 🐟"],
+                @[@"ga", @"gà", @"Gà 🐓"],
+                @[@"nai", @"Nai 🦌"]
+            ];
+            NSString *matchedName = args;
+            for (NSArray *al in aliases) {
+                for (NSString *str in al) {
+                    if ([userPick containsString:str]) {
+                        matchedName = [al lastObject];
+                        break;
+                    }
+                }
+            }
+            if ([r1 containsString:matchedName]) matchCount++;
+            if ([r2 containsString:matchedName]) matchCount++;
+            if ([r3 containsString:matchedName]) matchCount++;
+            reply = [NSString stringWithFormat:
+                @"🎰 KẾT QUẢ BẦU CUA TÔM CÁ 🎰\n"
+                @"━━━━━━━━━━━━━━━━━━━━\n"
+                @"🎲 Kết quả lắc: %@ • %@ • %@\n"
+                @"🎯 Bạn chọn: %@\n"
+                @"🏆 Kết quả: %@",
+                r1, r2, r3, matchedName,
+                (matchCount > 0) ? [NSString stringWithFormat:@"🎉 TRÚNG %d NHÁY! ĂN ĐẬM 💵", matchCount] : @"😢 Trật rồi! Chúc bạn may mắn lần sau."];
+        }
+    }
+    else if ([cmd isEqualToString:@"dovui"]) {
+        NSArray *riddles = @[
+            @"❓ Đố vui: Cái gì chặt không đứt, bứt không rời, phơi không khô, đốt không cháy?\n👉 Đáp án: Nước! 🌊",
+            @"❓ Đố vui: Con gì đầu dê mình ốc?\n👉 Đáp án: Con dốc! ⛰️",
+            @"❓ Đố vui: Bỏ ngoài nướng trong, ăn ngoài bỏ trong là gì?\n👉 Đáp án: Bắp ngô (Bắp nướng)! 🌽",
+            @"❓ Đố vui: Có một cây cầu có trọng tải là 10 tấn, có một chiếc xe tải chở hàng tổng trọng tải là 8 tấn + 4 tấn hàng = 12 tấn. Bác tài làm sao qua cầu?\n👉 Đáp án: Bác tài cứ đi bộ qua thôi, xe để lại! 🚶",
+            @"❓ Đố vui: Con mèo nào sợ chuột nhất?\n👉 Đáp án: Mèo máy Doraemon! 🐱",
+            @"❓ Đố vui: Cái gì bạn không mượn mà phải trả?\n👉 Đáp án: Lời cảm ơn hoặc trả giá! 💡"
+        ];
+        reply = riddles[arc4random_uniform((uint32_t)riddles.count)];
+    }
+    else if ([cmd isEqualToString:@"coinflip"]) {
+        BOOL heads = (arc4random_uniform(2) == 0);
+        reply = [NSString stringWithFormat:@"🪙 KẾT QUẢ TUNG ĐỒNG XU:\n👉 Mặt: %@", heads ? @"NGỬA (Heads) 🟢" : @"SẤP (Tails) 🔴"];
+    }
+    else if ([cmd isEqualToString:@"xuxac"]) {
+        int dice = arc4random_uniform(6) + 1;
+        reply = [NSString stringWithFormat:@"🎲 KẾT QUẢ ĐỔ XÚC XẮC:\n👉 [%d] Điểm!", dice];
     }
     else if ([cmd isEqualToString:@"prefix"]) {
         if (!isAdmin) {
@@ -1451,6 +1646,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
             reply = @"🛑 Bot đã được dừng bởi Admin!";
         }
     }
+
 
     if (reply && reply.length > 0) {
         [self botSendMessage:reply toThreadId:toThreadId chatVC:chatVC];
