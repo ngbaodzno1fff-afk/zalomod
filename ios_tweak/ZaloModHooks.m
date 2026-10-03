@@ -1122,178 +1122,315 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 4b. Hook All ZStyles & Profile Music
+        // 4b. Hook All ZStyles - EXHAUSTIVE DEEP HOOKS cho TẤT CẢ các lớp ZStyle trong Zalo
+        // -----------------------------------------------------------------------
+        // ProfileLegacyUtils - Bridge Obj-C/Swift cho ZStyle check
+        // -----------------------------------------------------------------------
         Class legacyUtilsCls = objc_getClass("ProfileLegacyUtils");
         if (legacyUtilsCls) {
-            Method mSub = class_getClassMethod(legacyUtilsCls, sel_registerName("isZStyleSubscribed:"));
-            if (mSub) method_setImplementation(mSub, (IMP)hook_isZStyleSubscribed);
-
+            const char *luSelectors[] = {
+                "isZStyleSubscribed:", "objc_isSubscribeZStyle:", "objc_isZStyleSubscribed:",
+                "isEnabledZStyleAvatarFrame", "objc_isEnabledZStyleAvatarFrame",
+                "objc_isEnabledFrameTypeForProfileUIType:", "isZStyleUser"
+            };
+            for (int i = 0; i < 7; i++) {
+                Method m = class_getClassMethod(legacyUtilsCls, sel_registerName(luSelectors[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+                Method mi = class_getInstanceMethod(legacyUtilsCls, sel_registerName(luSelectors[i]));
+                if (mi) method_setImplementation(mi, (IMP)hook_zstyleAlwaysTrue);
+            }
             Method mPkg = class_getClassMethod(legacyUtilsCls, sel_registerName("getZStylePackageId:"));
             if (mPkg) method_setImplementation(mPkg, (IMP)hook_getZStylePackageId);
-
-            Method mSub2 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isSubscribeZStyle:"));
-            if (mSub2) method_setImplementation(mSub2, (IMP)hook_isZStyleSubscribed);
-
-            Method mSub3 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isZStyleSubscribed:"));
-            if (mSub3) method_setImplementation(mSub3, (IMP)hook_isZStyleSubscribed);
-
             Method mPkg2 = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_getZStylePackageId:"));
             if (mPkg2) method_setImplementation(mPkg2, (IMP)hook_getZStylePackageId);
-
-            Method mFrame = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isEnabledZStyleAvatarFrame"));
-            if (mFrame) method_setImplementation(mFrame, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mFrameType = class_getClassMethod(legacyUtilsCls, sel_registerName("objc_isEnabledFrameTypeForProfileUIType:"));
-            if (mFrameType) method_setImplementation(mFrameType, (IMP)hook_zstyleAlwaysTrue);
-
             NSLog(@"[DucLamXNgBao] Hook ProfileLegacyUtils ZStyle thành công!");
         }
 
+        // -----------------------------------------------------------------------
+        // SocialFeatureSetting - Feature flags ZStyle cho Social features
+        // -----------------------------------------------------------------------
         Class socialSettingCls = objc_getClass("SocialFeatureSetting");
         if (socialSettingCls) {
-            Method m1 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledZStyleAvatarFrame"));
-            if (m1) method_setImplementation(m1, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m2 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledZStyleNameCard"));
-            if (m2) method_setImplementation(m2, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m3 = class_getClassMethod(socialSettingCls, sel_registerName("enableStoryMusic"));
-            if (m3) method_setImplementation(m3, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m4 = class_getClassMethod(socialSettingCls, sel_registerName("enableSwithProfileUI"));
-            if (m4) method_setImplementation(m4, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m5 = class_getClassMethod(socialSettingCls, sel_registerName("isEnabledFrameType:"));
-            if (m5) method_setImplementation(m5, (IMP)hook_zstyleAlwaysTrue);
+            const char *sfSelectors[] = {
+                "isEnabledZStyleAvatarFrame", "isEnabledZStyleNameCard",
+                "enableStoryMusic", "enableSwithProfileUI", "isEnabledFrameType:",
+                "isEnabledZStyleUser", "isEnableZStyle", "enableZStyleProfileUI"
+            };
+            for (int i = 0; i < 8; i++) {
+                Method m = class_getClassMethod(socialSettingCls, sel_registerName(sfSelectors[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+                Method mi = class_getInstanceMethod(socialSettingCls, sel_registerName(sfSelectors[i]));
+                if (mi) method_setImplementation(mi, (IMP)hook_zstyleAlwaysTrue);
+            }
             NSLog(@"[DucLamXNgBao] Hook SocialFeatureSetting ZStyle thành công!");
         }
 
+        // -----------------------------------------------------------------------
+        // ProfileEntity & BuddyEntity - User entity ZStyle flags
+        // -----------------------------------------------------------------------
+        const char *entityClsNames[] = {"ProfileEntity", "BuddyEntity", "UserEntity", "UserInfo"};
+        for (int ci = 0; ci < 4; ci++) {
+            Class eCls = objc_getClass(entityClsNames[ci]);
+            if (!eCls) continue;
+            const char *eSelectors[] = {
+                "isBusinessAccount", "isZStyle", "isZStyleUser", "isPaidZStyle",
+                "isZStyleConfigLoaded", "isZStyleProfileUI", "isZCloudUser",
+                "isPaidZCloudUser", "isPaidZCloudUserActive"
+            };
+            for (int si = 0; si < 9; si++) {
+                Method m = class_getInstanceMethod(eCls, sel_registerName(eSelectors[si]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
+            Method mPkg = class_getInstanceMethod(eCls, sel_registerName("zstylePackageId"));
+            if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
+            Method mPkg2 = class_getInstanceMethod(eCls, sel_registerName("_zstylePackageId"));
+            if (mPkg2) method_setImplementation(mPkg2, (IMP)hook_zstylePackageIdVIP);
+        }
+
+        // -----------------------------------------------------------------------
+        // ProfileFlowManager & FriendFlowManager - Business account check
+        // -----------------------------------------------------------------------
+        Class profFlowCls = objc_getClass("ProfileFlowManager");
+        if (profFlowCls) {
+            Method m = class_getInstanceMethod(profFlowCls, sel_registerName("checkUserIsBusinessAccount:"));
+            if (m) method_setImplementation(m, (IMP)hook_checkUserIsBusinessAccount);
+        }
+        Class friendFlowCls = objc_getClass("FriendFlowManager");
+        if (friendFlowCls) {
+            Method m = class_getInstanceMethod(friendFlowCls, sel_registerName("checkUserIsBusinessAccount:"));
+            if (m) method_setImplementation(m, (IMP)hook_checkUserIsBusinessAccount);
+        }
+
+        // -----------------------------------------------------------------------
+        // BALabelInfo - ZBusiness Pro badge label
+        // -----------------------------------------------------------------------
+        Class baInfoCls = objc_getClass("_TtC6CORBiz11BALabelInfo") ?: objc_getClass("CORBiz11BALabelInfo");
+        if (baInfoCls) {
+            Method m1 = class_getInstanceMethod(baInfoCls, sel_registerName("hasTitleBadge"));
+            if (m1) method_setImplementation(m1, (IMP)hook_alwaysTrue);
+            Method m2 = class_getInstanceMethod(baInfoCls, sel_registerName("titleBadge"));
+            if (m2) method_setImplementation(m2, (IMP)hook_titleBadge);
+            Method m3 = class_getInstanceMethod(baInfoCls, sel_registerName("textColorBadge"));
+            if (m3) method_setImplementation(m3, (IMP)hook_textColorBadge);
+            Method m4 = class_getInstanceMethod(baInfoCls, sel_registerName("backgroundColorBadge"));
+            if (m4) method_setImplementation(m4, (IMP)hook_backgroundColorBadge);
+            NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
+        }
+
+        // -----------------------------------------------------------------------
+        // ZCFReactionAuthenConfig - Mở khóa Reaction effects không cần mua
+        // -----------------------------------------------------------------------
+        Class reactionAuthCls = objc_getClass("_TtC15CommFeatureBase23ZCFReactionAuthenConfig") ?: objc_getClass("ZCFReactionAuthenConfig");
+        if (reactionAuthCls) {
+            Method mPromote = class_getInstanceMethod(reactionAuthCls, sel_registerName("promotionAllowed"));
+            if (mPromote) method_setImplementation(mPromote, (IMP)hook_zstyleAlwaysTrue);
+            Method mSub = class_getInstanceMethod(reactionAuthCls, sel_registerName("hasSubscription"));
+            if (mSub) method_setImplementation(mSub, (IMP)hook_zstyleAlwaysTrue);
+            Method mValid = class_getInstanceMethod(reactionAuthCls, sel_registerName("isValid"));
+            if (mValid) method_setImplementation(mValid, (IMP)hook_zstyleAlwaysTrue);
+            Method mFree = class_getInstanceMethod(reactionAuthCls, sel_registerName("isFree"));
+            if (mFree) method_setImplementation(mFree, (IMP)hook_zstyleAlwaysTrue);
+        }
+        // ZCFReactionPackageValidator
+        Class reactionPkgValidatorCls = objc_getClass("ZCFReactionPackageValidator");
+        if (reactionPkgValidatorCls) {
+            Method mValid = class_getInstanceMethod(reactionPkgValidatorCls, sel_registerName("isValid"));
+            if (mValid) method_setImplementation(mValid, (IMP)hook_zstyleAlwaysTrue);
+            Method mOwned = class_getInstanceMethod(reactionPkgValidatorCls, sel_registerName("isOwned"));
+            if (mOwned) method_setImplementation(mOwned, (IMP)hook_zstyleAlwaysTrue);
+            Method mFree = class_getInstanceMethod(reactionPkgValidatorCls, sel_registerName("isFree"));
+            if (mFree) method_setImplementation(mFree, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        // -----------------------------------------------------------------------
+        // ZStyle Sticker Pack
+        // -----------------------------------------------------------------------
         Class stickerPackCls = objc_getClass("_TtC19CommFeatureBusiness27StickersBottomSheetPackInfo") ?: objc_getClass("StickersBottomSheetPackInfo");
         if (stickerPackCls) {
-            Method mPaid = class_getInstanceMethod(stickerPackCls, sel_registerName("isPaidZStyle"));
-            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mOwned = class_getInstanceMethod(stickerPackCls, sel_registerName("isOwned"));
-            if (mOwned) method_setImplementation(mOwned, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mPurchased = class_getInstanceMethod(stickerPackCls, sel_registerName("isPurchased"));
-            if (mPurchased) method_setImplementation(mPurchased, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mZUser = class_getInstanceMethod(stickerPackCls, sel_registerName("isZStyleUser"));
-            if (mZUser) method_setImplementation(mZUser, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mFree = class_getInstanceMethod(stickerPackCls, sel_registerName("isfree"));
-            if (mFree) method_setImplementation(mFree, (IMP)hook_zstyleAlwaysTrue);
-
+            const char *spSelectors[] = {"isPaidZStyle", "isOwned", "isPurchased", "isZStyleUser", "isfree"};
+            for (int i = 0; i < 5; i++) {
+                Method m = class_getInstanceMethod(stickerPackCls, sel_registerName(spSelectors[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
             Method mPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("price"));
             if (mPrice) method_setImplementation(mPrice, (IMP)hook_zeroPrice);
-
             Method mZPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("zStylePrice"));
             if (mZPrice) method_setImplementation(mZPrice, (IMP)hook_zeroPrice);
-
             Method mOrigPrice = class_getInstanceMethod(stickerPackCls, sel_registerName("originalPrice"));
             if (mOrigPrice) method_setImplementation(mOrigPrice, (IMP)hook_zeroPrice);
         }
 
+        // -----------------------------------------------------------------------
+        // ZMp3Manager - Profile Music, RBT, Zing MP3
+        // -----------------------------------------------------------------------
         Class zmp3Cls = objc_getClass("ZMp3Manager");
         if (zmp3Cls) {
-            Method m1 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusic"));
-            if (m1) method_setImplementation(m1, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m2 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusicLocal"));
-            if (m2) method_setImplementation(m2, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m3 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableProfileMusicRBT"));
-            if (m3) method_setImplementation(m3, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m4 = class_getInstanceMethod(zmp3Cls, sel_registerName("enableShareProfileMusic"));
-            if (m4) method_setImplementation(m4, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m5 = class_getInstanceMethod(zmp3Cls, sel_registerName("autoPlayMyMusic"));
-            if (m5) method_setImplementation(m5, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m6 = class_getInstanceMethod(zmp3Cls, sel_registerName("autoPlayFriendMusic"));
-            if (m6) method_setImplementation(m6, (IMP)hook_zstyleAlwaysTrue);
-
-            Method m7 = class_getInstanceMethod(zmp3Cls, sel_registerName("newFlagEnableProfileMusic"));
-            if (m7) method_setImplementation(m7, (IMP)hook_zstyleAlwaysTrue);
+            const char *mp3Selectors[] = {
+                "enableProfileMusic", "enableProfileMusicLocal", "enableProfileMusicRBT",
+                "enableShareProfileMusic", "autoPlayMyMusic", "autoPlayFriendMusic",
+                "newFlagEnableProfileMusic", "isEnableMusic", "isEnableMusicLocal",
+                "newFlagIsEnableMusic", "enableMiniPlayer", "enablePillPlayer",
+                "isZStyleUser", "isPaidZStyle"
+            };
+            for (int i = 0; i < 14; i++) {
+                Method m = class_getInstanceMethod(zmp3Cls, sel_registerName(mp3Selectors[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
             NSLog(@"[DucLamXNgBao] Hook ZMp3Manager Profile Music ZStyle thành công!");
         }
 
-        // Swift ZStyle Package & Profile Info Models Hook
+        // -----------------------------------------------------------------------
+        // ZStylePackageInfo (Swift) - Package info check
+        // -----------------------------------------------------------------------
         Class zstylePkgInfoCls = objc_getClass("_TtC12ZStyleConfig17ZStylePackageInfo");
         if (zstylePkgInfoCls) {
-            Method mValid = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("isValid"));
-            if (mValid) method_setImplementation(mValid, (IMP)hook_zstyleAlwaysTrue);
-
+            const char *pkgSels[] = {"isValid", "isPaidPackage", "isOwned", "isZStyleUser"};
+            for (int i = 0; i < 4; i++) {
+                Method m = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName(pkgSels[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
             Method mPkg = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("packageId"));
             if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
-
-            Method mPaid = class_getInstanceMethod(zstylePkgInfoCls, sel_registerName("isPaidPackage"));
-            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
+            NSLog(@"[DucLamXNgBao] Hook ZStylePackageInfo thành công!");
         }
 
+        // -----------------------------------------------------------------------
+        // ZStyleProfileInfo (Swift ProfileUI) - Profile ZStyle info
+        // -----------------------------------------------------------------------
         Class zstyleProfInfoCls = objc_getClass("_TtC9ProfileUI17ZStyleProfileInfo");
         if (zstyleProfInfoCls) {
             Method mPkg = class_getInstanceMethod(zstyleProfInfoCls, sel_registerName("packageId"));
             if (mPkg) method_setImplementation(mPkg, (IMP)hook_zstylePackageIdVIP);
-
             Method mUser = class_getInstanceMethod(zstyleProfInfoCls, sel_registerName("isZStyleUser"));
             if (mUser) method_setImplementation(mUser, (IMP)hook_zstyleAlwaysTrue);
+            Method mPaid = class_getInstanceMethod(zstyleProfInfoCls, sel_registerName("isPaidZStyle"));
+            if (mPaid) method_setImplementation(mPaid, (IMP)hook_zstyleAlwaysTrue);
         }
 
+        // -----------------------------------------------------------------------
+        // ZStyleBenefitConfig - Benefit flags cho ZStyle features
+        // -----------------------------------------------------------------------
+        Class zstyleBenefitCls = objc_getClass("_TtC12ZStyleConfig19ZStyleBenefitConfig");
+        if (zstyleBenefitCls) {
+            const char *bSels[] = {"isEnabled", "isAvailable", "canUse", "isOwned", "isPaid"};
+            for (int i = 0; i < 5; i++) {
+                Method m = class_getInstanceMethod(zstyleBenefitCls, sel_registerName(bSels[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // ZStyleAvatarFrameFeature & ZStyleAvatarFrameSetting - Khung avatar
+        // -----------------------------------------------------------------------
+        Class avatarFrameFeature = objc_getClass("ZStyleAvatarFrameFeature");
+        if (avatarFrameFeature) {
+            const char *affSels[] = {"isEnabled", "isOwned", "isPaid", "canUse"};
+            for (int i = 0; i < 4; i++) {
+                Method m = class_getInstanceMethod(avatarFrameFeature, sel_registerName(affSels[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // ProfileMusicDisplayDecision (Swift) - Quyết định hiện nhạc profile
+        // -----------------------------------------------------------------------
         Class musicDecisionCls = objc_getClass("_TtC12ProfileMusic27ProfileMusicDisplayDecision");
         if (musicDecisionCls) {
-            Method mViewer = class_getInstanceMethod(musicDecisionCls, sel_registerName("isViewerZStyle"));
-            if (mViewer) method_setImplementation(mViewer, (IMP)hook_zstyleAlwaysTrue);
-
-            Method mProfUI = class_getInstanceMethod(musicDecisionCls, sel_registerName("isZStyleProfileUI"));
-            if (mProfUI) method_setImplementation(mProfUI, (IMP)hook_zstyleAlwaysTrue);
+            const char *mdSels[] = {"isViewerZStyle", "isZStyleProfileUI", "canShowMusic", "canShowMiniPlayer", "canShowPillPlayer"};
+            for (int i = 0; i < 5; i++) {
+                Method m = class_getInstanceMethod(musicDecisionCls, sel_registerName(mdSels[i]));
+                if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
+            }
         }
 
-        // Chặn mở Modal Paywall ZStyle Nâng Cấp Tài Khoản
+        // -----------------------------------------------------------------------
+        // ZCFReactionPaywallRouter - Chặn tất cả popup paywall upgrade
+        // -----------------------------------------------------------------------
         Class paywallRouterCls = objc_getClass("ZCFReactionPaywallRouter");
         if (paywallRouterCls) {
-            Method mOpen = class_getInstanceMethod(paywallRouterCls, sel_registerName("openPaywallWithEntrypoint:conversationType:"));
-            if (mOpen) method_setImplementation(mOpen, (IMP)hook_voidDoNothing);
+            const char *pwSels[] = {
+                "openPaywallWithEntrypoint:conversationType:",
+                "_showDialogNotAllowedOpenPaywallIAPNotEnable",
+                "showPaywall", "presentPaywall", "pushPaywall",
+                "openPaywall", "showUpgradeDialog", "showPurchaseDialog"
+            };
+            for (int i = 0; i < 8; i++) {
+                Method m = class_getInstanceMethod(paywallRouterCls, sel_registerName(pwSels[i]));
+                if (m) method_setImplementation(m, (IMP)hook_voidDoNothing);
+            }
+        }
+        // Block all paywall classes
+        const char *paywallClsNames[] = {"ZCFPaywallRouter", "ZStylePaywallRouter", "PaywallManager", "UpgradeManager"};
+        for (int ci = 0; ci < 4; ci++) {
+            Class pwCls = objc_getClass(paywallClsNames[ci]);
+            if (!pwCls) continue;
+            const char *pwSels[] = {"show", "present", "push", "open", "showPaywall", "openPaywall"};
+            for (int si = 0; si < 6; si++) {
+                Method m = class_getInstanceMethod(pwCls, sel_registerName(pwSels[si]));
+                if (m) method_setImplementation(m, (IMP)hook_voidDoNothing);
+            }
         }
 
+        // -----------------------------------------------------------------------
+        // ZCF QualityPickerConfig - Original Photo/Video
+        // -----------------------------------------------------------------------
+        Class qpConfigCls = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
+        if (qpConfigCls) {
+            Method mSendOrig = class_getClassMethod(qpConfigCls, sel_registerName("enableSendOriginal"));
+            if (mSendOrig) method_setImplementation(mSendOrig, (IMP)hook_alwaysTrue);
+            Method mBadge = class_getClassMethod(qpConfigCls, sel_registerName("originalBadge"));
+            if (mBadge) method_setImplementation(mBadge, (IMP)hook_originalBadge);
+            Method mRem = class_getClassMethod(qpConfigCls, sel_registerName("allowRememberQuality"));
+            if (mRem) method_setImplementation(mRem, (IMP)hook_allowRememberQuality);
+            Method mQuality = class_getClassMethod(qpConfigCls, sel_registerName("originalCompressQuality"));
+            if (mQuality) method_setImplementation(mQuality, (IMP)hook_originalCompressQuality);
+        }
+
+        // ZSharedData - Ảnh gốc HD
+        Class zSharedCls = objc_getClass("ZSharedData");
+        if (zSharedCls) {
+            Method mSetting = class_getInstanceMethod(zSharedCls, sel_registerName("settingOriginalPhotoQuality"));
+            if (mSetting) method_setImplementation(mSetting, (IMP)hook_alwaysTrue);
+            Method mLimitSize = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoSize"));
+            if (mLimitSize) method_setImplementation(mLimitSize, (IMP)hook_maxOriginalLimit);
+            Method mLimitDim = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoDimension"));
+            if (mLimitDim) method_setImplementation(mLimitDim, (IMP)hook_maxOriginalLimit);
+            Method mRemHD = class_getInstanceMethod(zSharedCls, sel_registerName("enableRememberHD"));
+            if (mRemHD) method_setImplementation(mRemHD, (IMP)hook_alwaysTrue);
+        }
+
+        // -----------------------------------------------------------------------
         // Hook AdBlock In-App (Chặn toàn bộ Quảng Cáo)
-        Class adConfigCls = objc_getClass("ZCHOutStreamAdsConfig");
-        if (adConfigCls) {
-            Method m = class_getInstanceMethod(adConfigCls, sel_registerName("enableAds"));
-            if (m) method_setImplementation(m, (IMP)hook_adBlockAlwaysFalse);
+        // -----------------------------------------------------------------------
+        const char *adClsNames[] = {"AdManager", "ZAdManager", "ZCHOutStreamAdsConfig", "ZAAdManager", "AdConfig", "ZAAdConfig"};
+        for (int ci = 0; ci < 6; ci++) {
+            Class adCls = objc_getClass(adClsNames[ci]);
+            if (!adCls) continue;
+            const char *adSels[] = {"enableAds", "shouldShowAd", "canShowAd", "isAdEnabled", "shouldShowBanner", "shouldShowFullscreen"};
+            for (int si = 0; si < 6; si++) {
+                Method m = class_getInstanceMethod(adCls, sel_registerName(adSels[si]));
+                if (m) method_setImplementation(m, (IMP)hook_adBlockAlwaysFalse);
+                Method mc = class_getClassMethod(adCls, sel_registerName(adSels[si]));
+                if (mc) method_setImplementation(mc, (IMP)hook_adBlockAlwaysFalse);
+            }
         }
 
-        Class adMgrCls = objc_getClass("AdManager");
-        if (adMgrCls) {
-            Method m1 = class_getInstanceMethod(adMgrCls, sel_registerName("shouldShowAd"));
-            if (m1) method_setImplementation(m1, (IMP)hook_adBlockAlwaysFalse);
-
-            Method m2 = class_getInstanceMethod(adMgrCls, sel_registerName("canShowAd"));
-            if (m2) method_setImplementation(m2, (IMP)hook_adBlockAlwaysFalse);
-        }
-
-        // Hook Unlimited Media (Gửi Video không giới hạn thời lượng & Gửi File lớn 2GB+)
+        // -----------------------------------------------------------------------
+        // Hook Unlimited Media
+        // -----------------------------------------------------------------------
         if (chatDataMgrCls) {
             Method mMaxDur = class_getInstanceMethod(chatDataMgrCls, sel_registerName("getMaxSendingDuration:isHighQuality:"));
             if (mMaxDur) method_setImplementation(mMaxDur, (IMP)hook_unlimitedMediaDuration);
-
             Method mMaxSz = class_getInstanceMethod(chatDataMgrCls, sel_registerName("getMaxFileSizeWithPickerQuality:"));
             if (mMaxSz) method_setImplementation(mMaxSz, (IMP)hook_unlimitedMediaFileSize);
-
             Method mTrim = class_getInstanceMethod(chatDataMgrCls, sel_registerName("autoTrimVideoIfNeed:isHighQuality:"));
             if (mTrim) method_setImplementation(mTrim, (IMP)hook_adBlockAlwaysFalse);
         }
-
-        NSLog(@"[DucLamXNgBao] Hook AdBlock VIP & Unlimited Media 2GB+ thành công!");
-
 
         NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%%!");
     });
 }
 
-// Constructor Tweak
 __attribute__((constructor))
 static void initZaloModVIP(void) {
     installAllZaloModHooks();
