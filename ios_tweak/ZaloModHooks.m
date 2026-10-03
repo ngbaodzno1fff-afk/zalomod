@@ -296,9 +296,9 @@ static void hook_ChatOperationProcessor_processUpdateUndo(id self, SEL _cmd, id 
 }
 
 // Bot Message Listener: Lắng nghe và xử lý tin nhắn cho Bot tự động
-static void hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id self, SEL _cmd, id chat, id dict) {
-    void (*orig)(id, SEL, id, id) = (void (*)(id, SEL, id, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processMessageWithChatEntity:itemDict:"));
-    if (orig) orig(self, _cmd, chat, dict);
+static id hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id self, SEL _cmd, id chat, id dict) {
+    id (*orig)(id, SEL, id, id) = (id (*)(id, SEL, id, id))class_getMethodImplementation(objc_getClass("ChatOperationProcessor"), sel_registerName("zaloMod_orig_processMessageWithChatEntity:itemDict:"));
+    id result = orig ? orig(self, _cmd, chat, dict) : nil;
 
     if (chat && [ZaloModViewController isBotRunning]) {
         @try {
@@ -306,14 +306,15 @@ static void hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id
             if ([chat respondsToSelector:sel_registerName("message")]) {
                 msg = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("message"));
             }
+            id raw = nil;
             NSString *fuid = nil;
             if ([chat respondsToSelector:sel_registerName("fuid")]) {
-                id raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("fuid"));
+                raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("fuid"));
                 if (raw) fuid = [NSString stringWithFormat:@"%@", raw];
             }
             NSString *tuid = nil;
             if ([chat respondsToSelector:sel_registerName("tuid")]) {
-                id raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("tuid"));
+                raw = ((id (*)(id, SEL))objc_msgSend)(chat, sel_registerName("tuid"));
                 if (raw) tuid = [NSString stringWithFormat:@"%@", raw];
             }
             BOOL isGroup = NO;
@@ -326,6 +327,7 @@ static void hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id
             }
         } @catch (NSException *e) {}
     }
+    return result;
 }
 
 // =========================================================================
@@ -533,7 +535,6 @@ static NSString *hook_BaseChatTVC_getTextToSend(id self, SEL _cmd) {
 }
 
 static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _cmd, NSString *text, BOOL needCreateBubble) {
-    [ZaloModViewController setActiveChatVC:self];
     NSString *styledText = text;
     if (text && text.length > 0) {
         NSString *effFont = getEffectiveFont();
@@ -546,7 +547,6 @@ static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _
 }
 
 static id hook_BaseChatTVC_createChatToSendWithMessage(id self, SEL _cmd, NSString *message, int mediaType, NSString *clientMsgId) {
-    [ZaloModViewController setActiveChatVC:self];
     NSString *styledMsg = message;
 
     if (message && message.length > 0) {
@@ -1411,34 +1411,6 @@ static void installAllZaloModHooks(void) {
                 Method m = class_getInstanceMethod(pwCls, sel_registerName(pwSels[si]));
                 if (m) method_setImplementation(m, (IMP)hook_voidDoNothing);
             }
-        }
-
-        // -----------------------------------------------------------------------
-        // ZCF QualityPickerConfig - Original Photo/Video
-        // -----------------------------------------------------------------------
-        Class qpConfigCls_new = objc_getClass("_TtC15CommFeatureBase22ZCFQualityPickerConfig") ?: objc_getClass("ZCFQualityPickerConfig");
-        if (qpConfigCls_new) {
-            Method mSendOrig = class_getClassMethod(qpConfigCls, sel_registerName("enableSendOriginal"));
-            if (mSendOrig) method_setImplementation(mSendOrig, (IMP)hook_alwaysTrue);
-            Method mBadge = class_getClassMethod(qpConfigCls, sel_registerName("originalBadge"));
-            if (mBadge) method_setImplementation(mBadge, (IMP)hook_originalBadge);
-            Method mRem = class_getClassMethod(qpConfigCls, sel_registerName("allowRememberQuality"));
-            if (mRem) method_setImplementation(mRem, (IMP)hook_allowRememberQuality);
-            Method mQuality = class_getClassMethod(qpConfigCls, sel_registerName("originalCompressQuality"));
-            if (mQuality) method_setImplementation(mQuality, (IMP)hook_originalCompressQuality);
-        }
-
-        // ZSharedData - Ảnh gốc HD
-        Class zSharedCls_new = objc_getClass("ZSharedData");
-        if (zSharedCls_new) {
-            Method mSetting = class_getInstanceMethod(zSharedCls, sel_registerName("settingOriginalPhotoQuality"));
-            if (mSetting) method_setImplementation(mSetting, (IMP)hook_alwaysTrue);
-            Method mLimitSize = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoSize"));
-            if (mLimitSize) method_setImplementation(mLimitSize, (IMP)hook_maxOriginalLimit);
-            Method mLimitDim = class_getInstanceMethod(zSharedCls, sel_registerName("limitOriginalPhotoDimension"));
-            if (mLimitDim) method_setImplementation(mLimitDim, (IMP)hook_maxOriginalLimit);
-            Method mRemHD = class_getInstanceMethod(zSharedCls, sel_registerName("enableRememberHD"));
-            if (mRemHD) method_setImplementation(mRemHD, (IMP)hook_alwaysTrue);
         }
 
         // -----------------------------------------------------------------------
