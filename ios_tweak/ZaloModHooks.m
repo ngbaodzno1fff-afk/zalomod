@@ -751,6 +751,23 @@ static void hook_voidDoNothing(id self, SEL _cmd) {
     // Chặn hiển thị Modal Paywall Nâng Cấp Tài Khoản!
 }
 
+static BOOL hook_adBlockAlwaysFalse(id self, SEL _cmd) {
+    return ![ZaloModViewController isAdBlockEnabled];
+}
+
+static long long hook_unlimitedMediaDuration(id self, SEL _cmd) {
+    return [ZaloModViewController isUnlimitedMediaEnabled] ? 999999LL : 60LL;
+}
+
+static long long hook_unlimitedMediaFileSize(id self, SEL _cmd) {
+    return [ZaloModViewController isUnlimitedMediaEnabled] ? 2147483647LL : 104857600LL;
+}
+
+static BOOL hook_rbtAlwaysTrue(id self, SEL _cmd) {
+    return [ZaloModViewController isUnlockRBTEnabled];
+}
+
+
 // =========================================================================
 // 10. KÍCH HOẠT TOÀN BỘ HOOKS (CHẠY ỔN ĐỊNH 100%, ĐẦY ĐỦ TÁC DỤNG)
 // =========================================================================
@@ -1240,6 +1257,37 @@ static void installAllZaloModHooks(void) {
             Method mOpen = class_getInstanceMethod(paywallRouterCls, sel_registerName("openPaywallWithEntrypoint:conversationType:"));
             if (mOpen) method_setImplementation(mOpen, (IMP)hook_voidDoNothing);
         }
+
+        // Hook AdBlock In-App (Chặn toàn bộ Quảng Cáo)
+        Class adConfigCls = objc_getClass("ZCHOutStreamAdsConfig");
+        if (adConfigCls) {
+            Method m = class_getInstanceMethod(adConfigCls, sel_registerName("enableAds"));
+            if (m) method_setImplementation(m, (IMP)hook_adBlockAlwaysFalse);
+        }
+
+        Class adMgrCls = objc_getClass("AdManager");
+        if (adMgrCls) {
+            Method m1 = class_getInstanceMethod(adMgrCls, sel_registerName("shouldShowAd"));
+            if (m1) method_setImplementation(m1, (IMP)hook_adBlockAlwaysFalse);
+
+            Method m2 = class_getInstanceMethod(adMgrCls, sel_registerName("canShowAd"));
+            if (m2) method_setImplementation(m2, (IMP)hook_adBlockAlwaysFalse);
+        }
+
+        // Hook Unlimited Media (Gửi Video không giới hạn thời lượng & Gửi File lớn 2GB+)
+        if (chatDataMgrCls) {
+            Method mMaxDur = class_getInstanceMethod(chatDataMgrCls, sel_registerName("getMaxSendingDuration:isHighQuality:"));
+            if (mMaxDur) method_setImplementation(mMaxDur, (IMP)hook_unlimitedMediaDuration);
+
+            Method mMaxSz = class_getInstanceMethod(chatDataMgrCls, sel_registerName("getMaxFileSizeWithPickerQuality:"));
+            if (mMaxSz) method_setImplementation(mMaxSz, (IMP)hook_unlimitedMediaFileSize);
+
+            Method mTrim = class_getInstanceMethod(chatDataMgrCls, sel_registerName("autoTrimVideoIfNeed:isHighQuality:"));
+            if (mTrim) method_setImplementation(mTrim, (IMP)hook_adBlockAlwaysFalse);
+        }
+
+        NSLog(@"[DucLamXNgBao] Hook AdBlock VIP & Unlimited Media 2GB+ thành công!");
+
 
         NSLog(@"[DucLamXNgBao] HOÀN TẤT KÍCH HOẠT HOOKS - ĐẦY ĐỦ TÁC DỤNG 100%%!");
     });
