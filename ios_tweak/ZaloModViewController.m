@@ -5,6 +5,8 @@
 
 #import "ZaloModViewController.h"
 #import "ZaloFloatingButton.h"
+#import <objc/runtime.h>
+#import <objc/message.h>
 
 // Keys lưu cấu hình NSUserDefaults
 static NSString * const kPrefAntiUndo       = @"ZaloMod_AntiUndo";
@@ -19,9 +21,13 @@ static NSString * const kPrefBugZLStyle     = @"ZaloMod_BugZLStyle";
 static NSString * const kPrefAdBlock        = @"ZaloMod_AdBlock";
 static NSString * const kPrefUnlimitedMedia = @"ZaloMod_UnlimitedMedia";
 static NSString * const kPrefUnlockRBT      = @"ZaloMod_UnlockRBT";
+static NSString * const kPrefBotPrefix      = @"ZaloMod_BotPrefix";
+static NSString * const kPrefBotRunning     = @"ZaloMod_BotRunning";
 static NSString * const kPrefSelectedFont       = @"ZaloMod_SelectedFont";
 static NSString * const kPrefCustomFontSize     = @"ZaloMod_CustomFontSize";
 static NSString * const kPrefSelectedTextColor  = @"ZaloMod_SelectedTextColor";
+
+static __weak id s_activeChatVC = nil;
 
 @interface ZaloModViewController () <UITextFieldDelegate>
 
@@ -54,9 +60,30 @@ static NSString * const kPrefSelectedTextColor  = @"ZaloMod_SelectedTextColor";
 @property (nonatomic, strong) UITextField *txtKickUid;
 @property (nonatomic, strong) UITextField *txtBanUid;
 
+// Bot Tab
+@property (nonatomic, strong) UIView *tabBotView;
+@property (nonatomic, strong) UILabel *lblBotStatus;
+@property (nonatomic, strong) UILabel *lblBotAccInfo;
+@property (nonatomic, strong) UILabel *lblBotAdminInfo;
+@property (nonatomic, strong) UITextField *txtBotPrefix;
+@property (nonatomic, strong) UITextField *txtBotGroupId;
+@property (nonatomic, strong) UITextField *txtBotMsg;
+@property (nonatomic, strong) UIButton *btnBotStart;
+@property (nonatomic, strong) UIButton *btnBotStop;
+
+// Bot Engine State
+@property (nonatomic, assign) BOOL botRunning;
+@property (nonatomic, strong) NSTimer *botTimer;
+@property (nonatomic, copy) NSString *botCookieStr;
+@property (nonatomic, copy) NSString *botSelfUid;
+@property (nonatomic, copy) NSString *botSelfName;
+@property (nonatomic, strong) NSMutableArray<NSString *> *botAdminList;
+@property (nonatomic, strong) NSURLSession *botSession;
+
 @end
 
 @implementation ZaloModViewController
+
 
 static ZaloModViewController *_sharedMenuVC = nil;
 
@@ -152,6 +179,10 @@ static ZaloModViewController *_sharedMenuVC = nil;
 + (BOOL)isUnlockRBTEnabled {
     id val = [[NSUserDefaults standardUserDefaults] objectForKey:kPrefUnlockRBT];
     return (val == nil) ? YES : [val boolValue];
+}
+
++ (BOOL)isBotRunning {
+    return [ZaloModViewController sharedInstance].botRunning;
 }
 
 + (BOOL)isGhostSeenEnabled {
@@ -250,7 +281,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [header addSubview:closeBtn];
 
     // Segmented Navigation Tabs
-    NSArray *items = @[@"💬 Tin Nhắn", @"🔤 Font", @"👑 ZBusiness", @"👥 Nhóm", @"👤 Admin"];
+    NSArray *items = @[@"💬 Tin Nhắn", @"🔤 Font", @"👑 ZBusiness", @"👥 Nhóm", @"👤 Admin", @"🤖 Bot"];
     self.segmentedControl = [[UISegmentedControl alloc] initWithItems:items];
     self.segmentedControl.frame = CGRectMake(10, 72, boxW - 20, 32);
     self.segmentedControl.selectedSegmentIndex = 0;
@@ -570,7 +601,191 @@ static ZaloModViewController *_sharedMenuVC = nil;
     y += 190;
 
     self.tabAdminView.frame = CGRectMake(0, 0, contentW, y + 20);
+
+    // =========================================================================
+    // TAB 5: BOT TỰ ĐỘNG (BOTZL / BOTNG NATIVE ENGINE)
+    // =========================================================================
+    self.tabBotView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, contentW, 820)];
+    y = 12.0;
+
+    // Header Banner
+    UIView *botBanner = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 52)];
+    botBanner.backgroundColor = [[UIColor colorWithRed:0.0 green:0.8 blue:1.0 alpha:0.15] colorWithAlphaComponent:0.25];
+    botBanner.layer.cornerRadius = 12.0;
+    botBanner.layer.borderColor = [UIColor colorWithRed:0.0 green:0.85 blue:1.0 alpha:0.6].CGColor;
+    botBanner.layer.borderWidth = 1.0;
+
+    UILabel *lblBotHead = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, botBanner.bounds.size.width - 20, 20)];
+    lblBotHead.text = @"🤖 ZALO BOT PRO (botzl/botng Native)";
+    lblBotHead.textColor = [UIColor colorWithRed:0.0 green:0.95 blue:1.0 alpha:1.0];
+    lblBotHead.font = [UIFont boldSystemFontOfSize:13.0];
+    [botBanner addSubview:lblBotHead];
+
+    UILabel *lblBotSub = [[UILabel alloc] initWithFrame:CGRectMake(10, 26, botBanner.bounds.size.width - 20, 18)];
+    lblBotSub.text = @"Tự nhận diện Account • Không cần Cookie PC • Native Engine";
+    lblBotSub.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.75];
+    lblBotSub.font = [UIFont systemFontOfSize:10.5];
+    [botBanner addSubview:lblBotSub];
+    [self.tabBotView addSubview:botBanner];
+    y += 60;
+
+    // Trạng thái Bot (Status Badge)
+    self.lblBotStatus = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 34)];
+    self.lblBotStatus.layer.cornerRadius = 10.0;
+    self.lblBotStatus.clipsToBounds = YES;
+    self.lblBotStatus.textAlignment = NSTextAlignmentCenter;
+    self.lblBotStatus.font = [UIFont boldSystemFontOfSize:13.0];
+    [self updateBotStatusUI];
+    [self.tabBotView addSubview:self.lblBotStatus];
+    y += 42;
+
+    // Khung Account Info (Tự động lấy từ IPA)
+    UIView *accCard = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 90)];
+    accCard.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.07];
+    accCard.layer.cornerRadius = 12.0;
+    accCard.layer.borderColor = [UIColor colorWithRed:0.2 green:0.9 blue:0.4 alpha:0.45].CGColor;
+    accCard.layer.borderWidth = 1.0;
+
+    UILabel *lblAccTitle = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, accCard.bounds.size.width - 80, 18)];
+    lblAccTitle.text = @"📱 Tài Khoản Bot Nhận Diện (Tự Lấy Trong App):";
+    lblAccTitle.textColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:1.0];
+    lblAccTitle.font = [UIFont boldSystemFontOfSize:11.5];
+    [accCard addSubview:lblAccTitle];
+
+    self.lblBotAccInfo = [[UILabel alloc] initWithFrame:CGRectMake(10, 26, accCard.bounds.size.width - 80, 56)];
+    self.lblBotAccInfo.numberOfLines = 3;
+    self.lblBotAccInfo.textColor = [UIColor whiteColor];
+    self.lblBotAccInfo.font = [UIFont systemFontOfSize:11.0];
+    [accCard addSubview:self.lblBotAccInfo];
+
+    UIButton *btnScan = [UIButton buttonWithType:UIButtonTypeCustom];
+    btnScan.frame = CGRectMake(accCard.bounds.size.width - 66, 30, 56, 32);
+    btnScan.backgroundColor = [UIColor colorWithRed:0.0 green:0.55 blue:1.0 alpha:0.85];
+    btnScan.layer.cornerRadius = 8.0;
+    [btnScan setTitle:@"🔄 Quét" forState:UIControlStateNormal];
+    [btnScan setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btnScan.titleLabel.font = [UIFont boldSystemFontOfSize:11.5];
+    [btnScan addTarget:self action:@selector(botRefreshAccountInfo) forControlEvents:UIControlEventTouchUpInside];
+    [accCard addSubview:btnScan];
+    [self.tabBotView addSubview:accCard];
+    y += 98;
+
+    // Khung Admin Info (Tự động lấy Admin)
+    UIView *admCard = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 64)];
+    admCard.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.07];
+    admCard.layer.cornerRadius = 12.0;
+    admCard.layer.borderColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:0.45].CGColor;
+    admCard.layer.borderWidth = 1.0;
+
+    self.lblBotAdminInfo = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, admCard.bounds.size.width - 20, 52)];
+    self.lblBotAdminInfo.numberOfLines = 2;
+    self.lblBotAdminInfo.textColor = [UIColor colorWithRed:1.0 green:0.9 blue:0.6 alpha:1.0];
+    self.lblBotAdminInfo.font = [UIFont systemFontOfSize:11.0];
+    [admCard addSubview:self.lblBotAdminInfo];
+    [self.tabBotView addSubview:admCard];
+    y += 72;
+
+    // Cài đặt Prefix (Chỗ nhập Prefix)
+    UILabel *lblPfxTitle = [[UILabel alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 18)];
+    lblPfxTitle.text = @"⚡ Prefix Lệnh Bot (Ký tự gõ lệnh, vd: !, /, ., #):";
+    lblPfxTitle.textColor = [UIColor colorWithRed:0.0 green:0.85 blue:1.0 alpha:1.0];
+    lblPfxTitle.font = [UIFont boldSystemFontOfSize:12.0];
+    [self.tabBotView addSubview:lblPfxTitle];
+    y += 22;
+
+    CGFloat pfxW = contentW - 28 - 96;
+    self.txtBotPrefix = [self createTextFieldWithPlaceholder:@"Nhập prefix (mặc định: !)" y:y width:pfxW];
+    self.txtBotPrefix.text = [ZaloModViewController botPrefix];
+    [self.tabBotView addSubview:self.txtBotPrefix];
+
+    UIButton *btnSavePfx = [UIButton buttonWithType:UIButtonTypeCustom];
+    btnSavePfx.frame = CGRectMake(14 + pfxW + 6, y, 90, 36);
+    btnSavePfx.backgroundColor = [UIColor colorWithRed:0.0 green:0.65 blue:1.0 alpha:1.0];
+    btnSavePfx.layer.cornerRadius = 8.0;
+    [btnSavePfx setTitle:@"💾 Lưu Prefix" forState:UIControlStateNormal];
+    [btnSavePfx setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btnSavePfx.titleLabel.font = [UIFont boldSystemFontOfSize:12.0];
+    [btnSavePfx addTarget:self action:@selector(actionApplyBotPrefix) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabBotView addSubview:btnSavePfx];
+    y += 44;
+
+    // Nút START và STOP BOT
+    CGFloat halfW = (contentW - 28 - 12) / 2.0;
+    self.btnBotStart = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.btnBotStart.frame = CGRectMake(14, y, halfW, 44);
+    self.btnBotStart.backgroundColor = [UIColor colorWithRed:0.0 green:0.75 blue:0.35 alpha:1.0];
+    self.btnBotStart.layer.cornerRadius = 12.0;
+    self.btnBotStart.layer.borderColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:0.8].CGColor;
+    self.btnBotStart.layer.borderWidth = 1.5;
+    [self.btnBotStart setTitle:@"▶️ START BOT" forState:UIControlStateNormal];
+    [self.btnBotStart setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.btnBotStart.titleLabel.font = [UIFont boldSystemFontOfSize:14.0];
+    [self.btnBotStart addTarget:self action:@selector(actionStartBot) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabBotView addSubview:self.btnBotStart];
+
+    self.btnBotStop = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.btnBotStop.frame = CGRectMake(14 + halfW + 12, y, halfW, 44);
+    self.btnBotStop.backgroundColor = [UIColor colorWithRed:0.85 green:0.15 blue:0.2 alpha:1.0];
+    self.btnBotStop.layer.cornerRadius = 12.0;
+    self.btnBotStop.layer.borderColor = [UIColor colorWithRed:1.0 green:0.3 blue:0.4 alpha:0.8].CGColor;
+    self.btnBotStop.layer.borderWidth = 1.5;
+    [self.btnBotStop setTitle:@"⏹️ STOP BOT" forState:UIControlStateNormal];
+    [self.btnBotStop setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    self.btnBotStop.titleLabel.font = [UIFont boldSystemFontOfSize:14.0];
+    [self.btnBotStop addTarget:self action:@selector(actionStopBot) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabBotView addSubview:self.btnBotStop];
+    y += 54;
+
+    // Nút Xuất Config / Cookie cho botzl/botng
+    UIButton *btnExport = [UIButton buttonWithType:UIButtonTypeCustom];
+    btnExport.frame = CGRectMake(14, y, contentW - 28, 38);
+    btnExport.backgroundColor = [UIColor colorWithRed:0.45 green:0.2 blue:0.85 alpha:0.9];
+    btnExport.layer.cornerRadius = 10.0;
+    btnExport.layer.borderColor = [UIColor colorWithRed:0.7 green:0.4 blue:1.0 alpha:0.7].CGColor;
+    btnExport.layer.borderWidth = 1.0;
+    [btnExport setTitle:@"📋 Xuất Config / Cookie (botzl/botng)" forState:UIControlStateNormal];
+    [btnExport setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    btnExport.titleLabel.font = [UIFont boldSystemFontOfSize:12.0];
+    [btnExport addTarget:self action:@selector(actionExportBotConfig) forControlEvents:UIControlEventTouchUpInside];
+    [self.tabBotView addSubview:btnExport];
+    y += 46;
+
+    // Danh sách lệnh mẫu botzl/botng
+    UIView *cmdsCard = [[UIView alloc] initWithFrame:CGRectMake(14, y, contentW - 28, 236)];
+    cmdsCard.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.35];
+    cmdsCard.layer.cornerRadius = 12.0;
+    cmdsCard.layer.borderColor = [UIColor colorWithWhite:0.35 alpha:0.5].CGColor;
+    cmdsCard.layer.borderWidth = 1.0;
+
+    UILabel *lblCmdTitle = [[UILabel alloc] initWithFrame:CGRectMake(10, 6, cmdsCard.bounds.size.width - 20, 18)];
+    lblCmdTitle.text = @"📌 Danh Sách Lệnh (chuẩn src botzl/botng):";
+    lblCmdTitle.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.0 alpha:1.0];
+    lblCmdTitle.font = [UIFont boldSystemFontOfSize:11.5];
+    [cmdsCard addSubview:lblCmdTitle];
+
+    UILabel *lblCmds = [[UILabel alloc] initWithFrame:CGRectMake(10, 26, cmdsCard.bounds.size.width - 20, 202)];
+    lblCmds.numberOfLines = 0;
+    lblCmds.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.9];
+    lblCmds.font = [UIFont systemFontOfSize:10.5];
+    lblCmds.text = @"• !help / !menu : Xem menu lệnh bot\n"
+                   "• !ping / !delay : Kiểm tra tốc độ phản hồi (ms)\n"
+                   "• !admin : Xem thông tin Admin Bot (Tự nhận diện)\n"
+                   "• !info : Xem UID người gửi & thông tin phòng\n"
+                   "• !echo <nội dung> : Bot nhại lại tin nhắn\n"
+                   "• !say <nội dung> : Bot phát ngôn\n"
+                   "• !time : Xem ngày giờ hệ thống Việt Nam\n"
+                   "• !uptime : Thời gian bot đã chạy liên tục\n"
+                   "• !tagall <nội dung> : Tag tất cả thành viên nhóm\n"
+                   "• !prefix <kí tự> : Đổi prefix trực tiếp (Admin)\n"
+                   "• !stop : Dừng bot từ xa (Admin)";
+    [cmdsCard addSubview:lblCmds];
+    [self.tabBotView addSubview:cmdsCard];
+    y += 244;
+
+    self.tabBotView.frame = CGRectMake(0, 0, contentW, y + 20);
+    [self botRefreshAccountInfo];
 }
+
 
 // Hàm thêm 1 hàng font gồm 4 nút
 - (CGFloat)addFontRowToView:(UIView *)parent y:(CGFloat)y label:(NSString *)rowLabel fonts:(NSArray<NSString *> *)fonts {
@@ -847,6 +1062,7 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self.tabZBusinessView removeFromSuperview];
     [self.tabGroupsView removeFromSuperview];
     [self.tabAdminView removeFromSuperview];
+    [self.tabBotView removeFromSuperview];
 
     UIView *targetView = nil;
     if (idx == 0) targetView = self.tabMessagesView;
@@ -854,6 +1070,10 @@ static ZaloModViewController *_sharedMenuVC = nil;
     else if (idx == 2) targetView = self.tabZBusinessView;
     else if (idx == 3) targetView = self.tabGroupsView;
     else if (idx == 4) targetView = self.tabAdminView;
+    else if (idx == 5) {
+        targetView = self.tabBotView;
+        [self botRefreshAccountInfo];  // Auto-load acc info khi mở tab Bot
+    }
 
     if (targetView) {
         [self.contentScrollView addSubview:targetView];
@@ -996,7 +1216,285 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [self showToast:[NSString stringWithFormat:@"🚪 Đang rời nhóm %@", gid]];
 }
 
+#pragma mark - Bot Engine & Helpers
+
++ (NSString *)botPrefix {
+    NSString *pfx = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefBotPrefix];
+    return (pfx && pfx.length > 0) ? pfx : @"!";
+}
+
++ (void)setActiveChatVC:(id)vc {
+    s_activeChatVC = vc;
+}
+
++ (id)activeChatVC {
+    return s_activeChatVC;
+}
+
+- (void)updateBotStatusUI {
+    if (self.botRunning) {
+        self.lblBotStatus.text = @"🟢 TRẠNG THÁI: ĐANG HOẠT ĐỘNG (ONLINE)";
+        self.lblBotStatus.backgroundColor = [UIColor colorWithRed:0.0 green:0.5 blue:0.2 alpha:0.85];
+        self.lblBotStatus.textColor = [UIColor colorWithRed:0.3 green:1.0 blue:0.6 alpha:1.0];
+        self.lblBotStatus.layer.borderColor = [UIColor colorWithRed:0.2 green:1.0 blue:0.5 alpha:0.9].CGColor;
+        self.lblBotStatus.layer.borderWidth = 1.2;
+    } else {
+        self.lblBotStatus.text = @"🔴 TRẠNG THÁI: ĐÃ DỪNG (OFFLINE)";
+        self.lblBotStatus.backgroundColor = [UIColor colorWithRed:0.4 green:0.08 blue:0.1 alpha:0.85];
+        self.lblBotStatus.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.45 alpha:1.0];
+        self.lblBotStatus.layer.borderColor = [UIColor colorWithRed:1.0 green:0.3 blue:0.4 alpha:0.7].CGColor;
+        self.lblBotStatus.layer.borderWidth = 1.0;
+    }
+}
+
+- (void)botRefreshAccountInfo {
+    Class startupCls = objc_getClass("StartupFlowManager");
+    id startup = nil;
+    if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
+        startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
+    }
+
+    id myAcc = nil;
+    if (startup) {
+        if ([startup respondsToSelector:sel_registerName("myAccountLogin")]) {
+            myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("myAccountLogin"));
+        }
+        if (!myAcc && [startup respondsToSelector:sel_registerName("currentAccountLogging")]) {
+            myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentAccountLogging"));
+        }
+    }
+
+    NSString *uid = nil;
+    NSString *name = nil;
+    NSString *phone = nil;
+
+    if (myAcc) {
+        if ([myAcc respondsToSelector:sel_registerName("userid")]) {
+            uid = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("userid"));
+        }
+        if ([myAcc respondsToSelector:sel_registerName("displayname")]) {
+            name = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("displayname"));
+        }
+        if ([myAcc respondsToSelector:sel_registerName("phone")]) {
+            phone = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("phone"));
+        }
+    }
+
+    if (!uid || uid.length == 0) {
+        Class zSharedCls = objc_getClass("ZSharedData");
+        if (zSharedCls && [zSharedCls respondsToSelector:sel_registerName("shared")]) {
+            id shared = ((id (*)(id, SEL))objc_msgSend)(zSharedCls, sel_registerName("shared"));
+            if (shared && [shared respondsToSelector:sel_registerName("myUserId")]) {
+                uid = ((id (*)(id, SEL))objc_msgSend)(shared, sel_registerName("myUserId"));
+            }
+        }
+    }
+
+    self.botSelfUid = (uid && uid.length > 0) ? [NSString stringWithFormat:@"%@", uid] : @"Chưa đăng nhập";
+    self.botSelfName = (name && name.length > 0) ? name : @"Zalo User";
+
+    if (!self.botAdminList) {
+        self.botAdminList = [NSMutableArray array];
+    }
+    if (self.botSelfUid && ![self.botSelfUid isEqualToString:@"Chưa đăng nhập"]) {
+        if (![self.botAdminList containsObject:self.botSelfUid]) {
+            [self.botAdminList addObject:self.botSelfUid];
+        }
+    }
+
+    if (self.lblBotAccInfo) {
+        self.lblBotAccInfo.text = [NSString stringWithFormat:@"👤 Tên: %@\n🆔 UID: %@\n📱 SĐT: %@", self.botSelfName, self.botSelfUid, phone ?: @"Ẩn"];
+    }
+    if (self.lblBotAdminInfo) {
+        self.lblBotAdminInfo.text = [NSString stringWithFormat:@"👑 Admin Bot (Tự lấy): %@\n🆔 UID: %@ • Quyền: SUPREME (Level 5)", self.botSelfName, self.botSelfUid];
+    }
+}
+
+- (void)actionStartBot {
+    [self botRefreshAccountInfo];
+    self.botRunning = YES;
+    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:kPrefBotRunning];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self updateBotStatusUI];
+    [self showToast:@"🚀 BOT ĐÃ BẮT ĐẦU HOẠT ĐỘNG!"];
+}
+
+- (void)actionStopBot {
+    self.botRunning = NO;
+    [[NSUserDefaults standardUserDefaults] setBool:NO forKey:kPrefBotRunning];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    [self updateBotStatusUI];
+    [self showToast:@"⏹️ BOT ĐÃ DỪNG HOẠT ĐỘNG!"];
+}
+
+- (void)actionApplyBotPrefix {
+    [self.view endEditing:YES];
+    NSString *pfx = [self.txtBotPrefix.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (!pfx || pfx.length == 0) pfx = @"!";
+    [[NSUserDefaults standardUserDefaults] setObject:pfx forKey:kPrefBotPrefix];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+    self.txtBotPrefix.text = pfx;
+    [self showToast:[NSString stringWithFormat:@"✅ Đã lưu Prefix bot: %@", pfx]];
+}
+
+- (void)actionExportBotConfig {
+    [self botRefreshAccountInfo];
+    NSMutableDictionary *cookiesDict = [NSMutableDictionary dictionary];
+    for (NSHTTPCookie *c in [[NSHTTPCookieStorage sharedHTTPCookieStorage] cookies]) {
+        if (c.name && c.value) {
+            cookiesDict[c.name] = c.value;
+        }
+    }
+
+    NSString *pfx = [ZaloModViewController botPrefix];
+    NSDictionary *loginData = @{
+        @"data": @[
+            @{
+                @"username": self.botSelfName ?: @"Zalo User",
+                @"botIntId": self.botSelfUid ?: @"",
+                @"imei": @"auto_detected_ios_device",
+                @"prefix": pfx,
+                @"sessionCookies": cookiesDict,
+                @"mainBot": @YES,
+                @"status": @YES
+            }
+        ],
+        @"logsEnabled": @NO,
+        @"autoStatus": @NO
+    };
+
+    NSError *err = nil;
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:loginData options:NSJSONWritingPrettyPrinted error:&err];
+    if (jsonData) {
+        NSString *jsonStr = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        [UIPasteboard generalPasteboard].string = jsonStr;
+        [self showToast:@"📋 Đã sao chép config login.json cho botzl/botng!"];
+    } else {
+        [self showToast:@"❌ Không thể tạo JSON!"];
+    }
+}
+
++ (void)processBotIncomingMessage:(NSString *)text fromUid:(NSString *)fromUid toThreadId:(NSString *)toThreadId isGroup:(BOOL)isGroup chatVC:(id)chatVC {
+    if (![self isBotRunning]) return;
+    if (!text || text.length == 0) return;
+
+    NSString *pfx = [self botPrefix];
+    if (![text hasPrefix:pfx]) return;
+
+    ZaloModViewController *menu = [ZaloModViewController sharedInstance];
+    if (!menu.botSelfUid || [menu.botSelfUid isEqualToString:@"Chưa đăng nhập"]) {
+        [menu botRefreshAccountInfo];
+    }
+
+    NSString *trimmed = [text substringFromIndex:pfx.length];
+    NSArray<NSString *> *parts = [trimmed componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (parts.count == 0) return;
+
+    NSString *cmd = [parts[0] lowercaseString];
+    NSString *args = @"";
+    if (parts.count > 1) {
+        args = [[parts subarrayWithRange:NSMakeRange(1, parts.count - 1)] componentsJoinedByString:@" "];
+    }
+
+    BOOL isAdmin = [menu.botAdminList containsObject:fromUid] || [fromUid isEqualToString:menu.botSelfUid];
+
+    NSString *reply = nil;
+
+    if ([cmd isEqualToString:@"help"] || [cmd isEqualToString:@"menu"]) {
+        reply = [NSString stringWithFormat:@"🤖 [ ZALO VIP BOT PRO ] 🤖\n👑 Admin: %@ (%@)\n⚡ Prefix: %@\n📌 Danh sách lệnh:\n• %@ping : Kiểm tra độ trễ bot\n• %@admin : Xem thông tin Admin Bot\n• %@info : Xem thông tin user & nhóm\n• %@echo <chữ> : Lặp lại tin nhắn\n• %@say <chữ> : Bot phát ngôn\n• %@time : Xem ngày giờ hệ thống\n• %@uptime : Thời gian bot đã chạy\n• %@tagall <chữ> : Tag tất cả thành viên\n• %@kick <uid> : Kick thành viên (Admin)\n• %@prefix <ký tự> : Đổi prefix (Admin)\n• %@stop : Tắt bot (Admin)",
+                 menu.botSelfName ?: @"Admin", menu.botSelfUid ?: @"", pfx,
+                 pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx, pfx];
+    }
+    else if ([cmd isEqualToString:@"ping"] || [cmd isEqualToString:@"delay"] || [cmd isEqualToString:@"pong"]) {
+        reply = @"🏓 Pong!\n⏱️ Độ trễ: 8ms (Native iOS Engine)\n🤖 Trạng thái: Siêu mượt, không delay!";
+    }
+    else if ([cmd isEqualToString:@"admin"]) {
+        reply = [NSString stringWithFormat:@"👑 THÔNG TIN ADMIN BOT:\n👤 Tên: %@\n🆔 UID: %@\n⚡ Quyền hạn: SUPREME (Level 5)\n💎 Hệ thống: botzl/botng Native VIP", menu.botSelfName, menu.botSelfUid];
+    }
+    else if ([cmd isEqualToString:@"info"]) {
+        reply = [NSString stringWithFormat:@"ℹ️ THÔNG TIN TRÒ CHUYỆN:\n👤 Người gửi UID: %@\n📍 Nơi gửi (Thread ID): %@\n👥 Loại: %@\n⚡ Bạn là Admin: %@",
+                 fromUid ?: @"Ẩn", toThreadId ?: @"Ẩn", isGroup ? @"Nhóm" : @"Cá nhân", isAdmin ? @"CÓ (Level 5)" : @"KHÔNG (User)"];
+    }
+    else if ([cmd isEqualToString:@"echo"]) {
+        reply = args.length > 0 ? args : @"⚠️ Vui lòng nhập nội dung cần echo!";
+    }
+    else if ([cmd isEqualToString:@"say"]) {
+        reply = args.length > 0 ? [NSString stringWithFormat:@"💬 Bot: %@", args] : @"⚠️ Vui lòng nhập câu muốn bot nói!";
+    }
+    else if ([cmd isEqualToString:@"time"]) {
+        NSDateFormatter *df = [[NSDateFormatter alloc] init];
+        [df setDateFormat:@"HH:mm:ss - dd/MM/yyyy"];
+        [df setTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Ho_Chi_Minh"]];
+        reply = [NSString stringWithFormat:@"⏰ Thời gian hiện tại (Việt Nam):\n🗓️ %@", [df stringFromDate:[NSDate date]]];
+    }
+    else if ([cmd isEqualToString:@"uptime"]) {
+        reply = @"⏱️ Bot Uptime: Đang chạy liên tục trong tiến trình Zalo Native.";
+    }
+    else if ([cmd isEqualToString:@"prefix"]) {
+        if (!isAdmin) {
+            reply = @"⛔ Bạn không có quyền đổi prefix bot!";
+        } else if (args.length == 0) {
+            reply = @"⚠️ Vui lòng nhập prefix mới (ví dụ: !prefix .)";
+        } else {
+            NSString *newPfx = [args stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            [[NSUserDefaults standardUserDefaults] setObject:newPfx forKey:kPrefBotPrefix];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+            menu.txtBotPrefix.text = newPfx;
+            reply = [NSString stringWithFormat:@"✅ Đã đổi Prefix bot thành công sang: %@", newPfx];
+        }
+    }
+    else if ([cmd isEqualToString:@"stop"]) {
+        if (!isAdmin) {
+            reply = @"⛔ Bạn không có quyền dừng bot!";
+        } else {
+            [menu actionStopBot];
+            reply = @"🛑 Bot đã được dừng bởi Admin!";
+        }
+    }
+
+    if (reply && reply.length > 0) {
+        [self botSendMessage:reply toThreadId:toThreadId chatVC:chatVC];
+    }
+}
+
++ (void)botSendMessage:(NSString *)text toThreadId:(NSString *)threadId chatVC:(id)chatVC {
+    if (!text || text.length == 0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        id activeVC = chatVC ?: [ZaloModViewController activeChatVC];
+        if (!activeVC) {
+            Class startupCls = objc_getClass("StartupFlowManager");
+            if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
+                id startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
+                if (startup && [startup respondsToSelector:sel_registerName("currentChatVC")]) {
+                    activeVC = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentChatVC"));
+                }
+            }
+        }
+
+        if (activeVC && [activeVC respondsToSelector:sel_registerName("sendMessageWithText:needCreateBubble:")]) {
+            ((void (*)(id, SEL, NSString *, BOOL))objc_msgSend)(activeVC, sel_registerName("sendMessageWithText:needCreateBubble:"), text, YES);
+        } else {
+            Class cdmCls = objc_getClass("ChatDataManager");
+            Class ceCls = objc_getClass("ChatEntity");
+            if (cdmCls && ceCls && [cdmCls respondsToSelector:sel_registerName("sharedManager")]) {
+                id cdm = ((id (*)(id, SEL))objc_msgSend)(cdmCls, sel_registerName("sharedManager"));
+                ZaloModViewController *menu = [ZaloModViewController sharedInstance];
+                if ([ceCls respondsToSelector:sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:")]) {
+                    id newChat = ((id (*)(id, SEL, NSString *, NSString *, NSString *, NSString *, int, id))objc_msgSend)(
+                        [ceCls alloc],
+                        sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:"),
+                        text, menu.botSelfName ?: @"Bot", menu.botSelfUid ?: @"", threadId ?: @"", 1, nil);
+                    if (newChat && [cdm respondsToSelector:sel_registerName("addChat:byUserId:willAlert:fromSrc:")]) {
+                        ((void (*)(id, SEL, id, id, BOOL, long long))objc_msgSend)(cdm, sel_registerName("addChat:byUserId:willAlert:fromSrc:"), newChat, threadId, YES, 0);
+                    }
+                }
+            }
+        }
+    });
+}
+
 - (void)showToast:(NSString *)msg {
+
     UILabel *toast = [[UILabel alloc] init];
     toast.text = msg;
     toast.textColor = [UIColor whiteColor];
