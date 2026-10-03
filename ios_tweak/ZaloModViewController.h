@@ -31,5 +31,9 @@
 + (BOOL)isBugOriginalEnabled;
 + (BOOL)isBugZBusinessEnabled;
 + (BOOL)isBugZLStyleEnabled;
++ (BOOL)isAdBlockEnabled;
++ (BOOL)isUnlimitedMediaEnabled;
++ (BOOL)isUnlockRBTEnabled;
 
 @end
+
