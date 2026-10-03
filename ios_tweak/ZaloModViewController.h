@@ -40,6 +40,7 @@
 + (void)botSendMessage:(NSString *)text toThreadId:(NSString *)threadId chatVC:(id)chatVC;
 + (void)setActiveChatVC:(id)vc;
 + (id)activeChatVC;
++ (NSString *)myUserId;
 
 @end
 
