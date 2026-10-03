@@ -1,6 +1,6 @@
 //
 //  ZaloModFontHelper.m
-//  ZaloMod VIP - Bộ chuyển đổi 12 Font chữ nghệ thuật & Chữ To & Màu sắc
+//  ZaloMod VIP - Bộ chuyển đổi 15 Font chữ nghệ thuật & Chữ To & Màu sắc
 //  Thương hiệu: DucLamXNgBao
 //
 
@@ -53,32 +53,92 @@
     }
 }
 
+// Chuyển đổi ký tự đã bị định dạng trước đó về lại ký tự ASCII thường (tránh double encode / hỏng chuỗi)
++ (NSString *)stripStyleFromChar:(NSString *)ch {
+    if (!ch || ch.length == 0) return @"";
+    if (ch.length == 1) {
+        unichar c = [ch characterAtIndex:0];
+        // Khoanh tròn Ⓐ..Ⓩ (0x24B6..0x24CF), ⓐ..ⓩ (0x24D0..0x24E9), ⓪..⑨ (0x24EA, 0x2460..0x2468)
+        if (c >= 0x24B6 && c <= 0x24CF) return [NSString stringWithFormat:@"%c", (char)('A' + (c - 0x24B6))];
+        if (c >= 0x24D0 && c <= 0x24E9) return [NSString stringWithFormat:@"%c", (char)('a' + (c - 0x24D0))];
+        if (c >= 0x2460 && c <= 0x2468) return [NSString stringWithFormat:@"%c", (char)('1' + (c - 0x2460))];
+        if (c == 0x24EA) return @"0";
+        // Fullwidth Pixel 0xFF21..0xFF3A, 0xFF41..0xFF5A
+        if (c >= 0xFF21 && c <= 0xFF3A) return [NSString stringWithFormat:@"%c", (char)('A' + (c - 0xFF21))];
+        if (c >= 0xFF41 && c <= 0xFF5A) return [NSString stringWithFormat:@"%c", (char)('a' + (c - 0xFF41))];
+        if (c >= 0xFF10 && c <= 0xFF19) return [NSString stringWithFormat:@"%c", (char)('0' + (c - 0xFF10))];
+        return ch;
+    }
+    if (ch.length == 2) {
+        unichar lead = [ch characterAtIndex:0];
+        unichar trail = [ch characterAtIndex:1];
+        if (lead >= 0xD800 && lead <= 0xDBFF && trail >= 0xDC00 && trail <= 0xDFFF) {
+            uint32_t cp = 0x10000 + ((lead - 0xD800) << 10) + (trail - 0xDC00);
+            // Math Bold Sans (Chữ To): 0x1D5D4..0x1D607
+            if (cp >= 0x1D5D4 && cp <= 0x1D5ED) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1D5D4))];
+            if (cp >= 0x1D5EE && cp <= 0x1D607) return [NSString stringWithFormat:@"%c", (char)('a' + (cp - 0x1D5EE))];
+            // Math Bold Numbers: 0x1D7EC..0x1D7F5
+            if (cp >= 0x1D7EC && cp <= 0x1D7F5) return [NSString stringWithFormat:@"%c", (char)('0' + (cp - 0x1D7EC))];
+            // Negative Squared Latin (Chữ Đỏ): 0x1F170..0x1F189
+            if (cp >= 0x1F170 && cp <= 0x1F189) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1F170))];
+            // Regional Indicators (Chữ Xanh): 0x1F1E6..0x1F1FF
+            if (cp >= 0x1F1E6 && cp <= 0x1F1FF) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1F1E6))];
+            // Negative Circled (Khối Đen): 0x1F150..0x1F169
+            if (cp >= 0x1F150 && cp <= 0x1F169) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1F150))];
+            // Monospace: 0x1D670..0x1D6A3
+            if (cp >= 0x1D670 && cp <= 0x1D689) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1D670))];
+            if (cp >= 0x1D68A && cp <= 0x1D6A3) return [NSString stringWithFormat:@"%c", (char)('a' + (cp - 0x1D68A))];
+            // Bold Serif (Retro): 0x1D400..0x1D433
+            if (cp >= 0x1D400 && cp <= 0x1D419) return [NSString stringWithFormat:@"%c", (char)('A' + (cp - 0x1D400))];
+            if (cp >= 0x1D41A && cp <= 0x1D433) return [NSString stringWithFormat:@"%c", (char)('a' + (cp - 0x1D41A))];
+        }
+    }
+    return ch;
+}
+
 + (NSString *)convertText:(NSString *)text toStyle:(NSString *)style {
-    if (!text || text.length == 0 || [style isEqualToString:@"Tắt"]) {
+    if (!text || text.length == 0) return text;
+    if (!style || style.length == 0) return text;
+
+    NSString *lowerStyle = [style lowercaseString];
+    if ([lowerStyle isEqualToString:@"tắt"] || [lowerStyle isEqualToString:@"tat"] ||
+        [lowerStyle isEqualToString:@"off"] || [lowerStyle isEqualToString:@"none"] ||
+        [lowerStyle isEqualToString:@"0"] || [lowerStyle isEqualToString:@"mặc định"] ||
+        [lowerStyle isEqualToString:@"default"]) {
         return text;
     }
 
-    if ([style isEqualToString:@"Random"] || [style isEqualToString:@"Random Màu Font"]) {
-        NSArray *allStyles = @[@"Chữ To", @"Chữ Đỏ", @"Chữ Xanh", @"Khối Đen", @"Khoanh Tròn", @"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant", @"Amatic", @"Terminal", @"Retro", @"Young", @"School"];
-        NSMutableString *res = [NSMutableString string];
-        for (NSUInteger i = 0; i < text.length; i++) {
-            NSString *ch = [text substringWithRange:NSMakeRange(i, 1)];
-            NSString *rndStyle = allStyles[arc4random_uniform((uint32_t)allStyles.count)];
-            [res appendString:[self convertSingleChar:ch inStyle:rndStyle]];
-        }
-        return res;
-    }
+    NSArray *allStyles = @[
+        @"Chữ To", @"Chữ Đỏ", @"Chữ Xanh", @"Khối Đen", @"Khoanh Tròn",
+        @"Pixel", @"Vintage", @"Florence", @"Notes", @"Elegant",
+        @"Amatic", @"Terminal", @"Retro", @"Young", @"School"
+    ];
 
-    NSMutableString *result = [NSMutableString string];
-    for (NSUInteger i = 0; i < text.length; i++) {
-        NSString *ch = [text substringWithRange:NSMakeRange(i, 1)];
-        [result appendString:[self convertSingleChar:ch inStyle:style]];
-    }
-    return result;
+    BOOL isRandom = [style isEqualToString:@"Random"] || [style isEqualToString:@"Random Màu Font"];
+
+    NSMutableString *result = [NSMutableString stringWithCapacity:text.length * 2];
+
+    // Sử dụng NSStringEnumerationByComposedCharacterSequences đảm bảo KHÔNG BAO GIỜ bị cắt đứt surrogate pair
+    [text enumerateSubstringsInRange:NSMakeRange(0, text.length)
+                             options:NSStringEnumerationByComposedCharacterSequences
+                          usingBlock:^(NSString * _Nullable substring, NSRange substringRange, NSRange enclosingRange, BOOL * _Nonnull stop) {
+        if (!substring || substring.length == 0) return;
+
+        // Đầu tiên giải mã nếu ký tự đã bị biến đổi trước đó
+        NSString *baseCh = [self stripStyleFromChar:substring];
+
+        NSString *targetStyle = isRandom ? allStyles[arc4random_uniform((uint32_t)allStyles.count)] : style;
+        NSString *styledCh = [self convertSingleChar:baseCh inStyle:targetStyle];
+        [result appendString:(styledCh ?: baseCh)];
+    }];
+
+    return result.length > 0 ? result : text;
 }
 
 + (NSString *)convertSingleChar:(NSString *)ch inStyle:(NSString *)style {
-    if (ch.length != 1) return ch;
+    if (!ch || ch.length == 0) return ch;
+    if (ch.length != 1) return ch; // Chỉ xử lý đơn ký tự ASCII cơ bản
+
     unichar rawC = [ch characterAtIndex:0];
     unichar c = [self normalizeVietnameseChar:rawC];
 
