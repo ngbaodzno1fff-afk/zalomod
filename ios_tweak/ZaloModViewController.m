@@ -588,6 +588,14 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [[NSUserDefaults standardUserDefaults] setObject:fn forKey:kPrefSelectedFont];
     [[NSUserDefaults standardUserDefaults] synchronize];
 
+    if ([fn isEqualToString:@"Chữ Đỏ"]) {
+        [ZaloModViewController setSelectedTextColorName:@"Đỏ"];
+    } else if ([fn isEqualToString:@"Chữ Xanh"]) {
+        [ZaloModViewController setSelectedTextColorName:@"Xanh Dương"];
+    } else if ([fn isEqualToString:@"Random Màu Font"]) {
+        [ZaloModViewController setSelectedTextColorName:@"Random"];
+    }
+
     for (UIButton *b in self.fontButtons) {
         if ([b isEqual:sender]) {
             b.backgroundColor = [UIColor colorWithRed:0.0 green:0.55 blue:1.0 alpha:1.0];
@@ -596,6 +604,8 @@ static ZaloModViewController *_sharedMenuVC = nil;
         }
     }
     self.lblCurrentFont.text = [NSString stringWithFormat:@"Đang chọn Font: %@", fn];
+    self.lblCurrentTextColor.text = [NSString stringWithFormat:@"🎨 Đang chọn màu chữ: %@", [ZaloModViewController selectedTextColorName]];
+    self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
     [self showToast:[NSString stringWithFormat:@"🔤 Đã chọn Font: %@", fn]];
 }
 
@@ -651,6 +661,20 @@ static ZaloModViewController *_sharedMenuVC = nil;
     [ZaloModViewController setSelectedTextColorName:colName];
     self.lblCurrentTextColor.text = [NSString stringWithFormat:@"🎨 Đang chọn màu chữ: %@", colName];
     self.lblCurrentTextColor.textColor = [ZaloModViewController selectedTextColor] ?: [UIColor whiteColor];
+
+    NSString *curFont = [[NSUserDefaults standardUserDefaults] stringForKey:kPrefSelectedFont];
+    if (!curFont || [curFont isEqualToString:@"Tắt"]) {
+        if ([colName isEqualToString:@"Đỏ"]) {
+            [[NSUserDefaults standardUserDefaults] setObject:@"Chữ Đỏ" forKey:kPrefSelectedFont];
+            self.lblCurrentFont.text = @"Đang chọn Font: Chữ Đỏ";
+        } else if ([colName isEqualToString:@"Xanh Dương"]) {
+            [[NSUserDefaults standardUserDefaults] setObject:@"Chữ Xanh" forKey:kPrefSelectedFont];
+            self.lblCurrentFont.text = @"Đang chọn Font: Chữ Xanh";
+        } else if ([colName isEqualToString:@"Random"]) {
+            [[NSUserDefaults standardUserDefaults] setObject:@"Random Màu Font" forKey:kPrefSelectedFont];
+            self.lblCurrentFont.text = @"Đang chọn Font: Random Màu Font";
+        }
+    }
 
     for (UIButton *b in self.colorButtons) {
         UIColor *boxColor = [b titleColorForState:UIControlStateNormal];
