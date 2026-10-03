@@ -158,14 +158,11 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 static NSString *getEffectiveFont(void) {
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
     if (!selectedFont || [selectedFont isEqualToString:@"Tắt"]) {
-        NSString *col = [ZaloModViewController selectedTextColorName];
-        if ([col isEqualToString:@"Đỏ"]) return @"Chữ Đỏ";
-        if ([col isEqualToString:@"Xanh Dương"]) return @"Chữ Xanh";
-        if ([col isEqualToString:@"Random"]) return @"Random Màu Font";
-        return nil;
+        return nil; // Tuyệt đối trả về nil khi chọn Tắt, không fallback sang màu chữ nào
     }
     return selectedFont;
 }
+
 
 @interface UITextView (ZaloModFontHook)
 @end
