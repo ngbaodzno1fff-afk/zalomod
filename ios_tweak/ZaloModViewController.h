@@ -34,6 +34,12 @@
 + (BOOL)isAdBlockEnabled;
 + (BOOL)isUnlimitedMediaEnabled;
 + (BOOL)isUnlockRBTEnabled;
++ (BOOL)isBotRunning;
++ (NSString *)botPrefix;
++ (void)processBotIncomingMessage:(NSString *)text fromUid:(NSString *)fromUid toThreadId:(NSString *)toThreadId isGroup:(BOOL)isGroup chatVC:(id)chatVC;
++ (void)botSendMessage:(NSString *)text toThreadId:(NSString *)threadId chatVC:(id)chatVC;
++ (void)setActiveChatVC:(id)vc;
++ (id)activeChatVC;
 
 @end
 
