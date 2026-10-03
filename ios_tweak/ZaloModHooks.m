@@ -155,15 +155,27 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 // =========================================================================
 // 3. FONT HOOK (15 FONT CHỮ NGHỆ THUẬT, CHỮ TO, ALL MÀU SẮC Ô NHẬP)
 // =========================================================================
+static NSString *getEffectiveFont(void) {
+    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    if (!selectedFont || [selectedFont isEqualToString:@"Tắt"]) {
+        NSString *col = [ZaloModViewController selectedTextColorName];
+        if ([col isEqualToString:@"Đỏ"]) return @"Chữ Đỏ";
+        if ([col isEqualToString:@"Xanh Dương"]) return @"Chữ Xanh";
+        if ([col isEqualToString:@"Random"]) return @"Random Màu Font";
+        return nil;
+    }
+    return selectedFont;
+}
+
 @interface UITextView (ZaloModFontHook)
 @end
 
 @implementation UITextView (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    NSString *effFont = getEffectiveFont();
     NSString *textToInsert = text;
-    if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
-        textToInsert = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+    if (effFont && text.length > 0) {
+        textToInsert = [ZaloModFontHelper convertText:text toStyle:effFont];
     }
     [self zaloMod_insertText:textToInsert];
 
@@ -190,10 +202,10 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 
 @implementation UITextField (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
+    NSString *effFont = getEffectiveFont();
     NSString *textToInsert = text;
-    if (selectedFont && ![selectedFont isEqualToString:@"Tắt"] && text.length > 0) {
-        textToInsert = [ZaloModFontHelper convertText:text toStyle:selectedFont];
+    if (effFont && text.length > 0) {
+        textToInsert = [ZaloModFontHelper convertText:text toStyle:effFont];
     }
     [self zaloMod_insertText:textToInsert];
 
@@ -406,27 +418,24 @@ static BOOL isOutgoingChatMessage(id chat) {
 static void applyAllModSettingsToOutgoingChat(id chat) {
     if (!chat) return;
     @try {
-        // CHỈ ÁP DỤNG NẾU LÀ TIN NHẮN CỦA MÌNH (OUTGOING / IS FROM OWNER)!
-        if (!isOutgoingChatMessage(chat)) return;
-
         // 1. ÁP DỤNG FONT CHỮ (Chữ To, Chữ Đỏ, Khối Đen, Khoanh Tròn, Random,...)
-        NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
-        if (selectedFont && ![selectedFont isEqualToString:@"Tắt"]) {
+        NSString *effFont = getEffectiveFont();
+        if (effFont) {
             SEL msgSel = sel_registerName("message");
             SEL setMsgSel = sel_registerName("setMessage:");
             if ([chat respondsToSelector:msgSel] && [chat respondsToSelector:setMsgSel]) {
                 NSString *origMsg = ((id (*)(id, SEL))objc_msgSend)(chat, msgSel);
                 if (origMsg && origMsg.length > 0) {
-                    NSString *styledMsg = [ZaloModFontHelper convertText:origMsg toStyle:selectedFont];
+                    NSString *styledMsg = [ZaloModFontHelper convertText:origMsg toStyle:effFont];
                     if (styledMsg && styledMsg.length > 0) {
                         ((void (*)(id, SEL, id))objc_msgSend)(chat, setMsgSel, styledMsg);
-                        NSLog(@"[DucLamXNgBao] Đã đổi font '%@' cho tin nhắn gửi đi: %@", selectedFont, styledMsg);
+                        NSLog(@"[DucLamXNgBao] Đã đổi font '%@' cho tin nhắn gửi đi: %@", effFont, styledMsg);
                     }
                 }
             }
         }
 
-        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d) - CHỈ CHO TIN NHẮN CỦA MÌNH!
+        // 2. ÁP DỤNG TTL (TỰ XÓA THEO GIÂY: s, h, d) - CHỈ CHO TIN NHẮN GỬI ĐI!
         NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
         if (ttlSecs > 0) {
             SEL setTtlSel = sel_registerName("setTtl:");
@@ -474,6 +483,106 @@ static BOOL hook_ChatEntity_isExpiredMessage(id self, SEL _cmd) {
 
     BOOL (*orig)(id, SEL) = (BOOL (*)(id, SEL))class_getMethodImplementation(objc_getClass("ChatEntity"), sel_registerName("zaloMod_orig_isExpiredMessage"));
     return orig ? orig(self, _cmd) : NO;
+}
+
+// =========================================================================
+// 6B. HOOK BASECHATTVC: ĐỔI FONT VÀ MÀU TRỰC TIẾP KHI GỬI & HIỂN THỊ CELL
+// (ĐẢM BẢO 100% GỬI TIN NHẮN KHÔNG BỊ MẤT FONT, KHÔNG MẤT MÀU!)
+// =========================================================================
+static NSString *hook_BaseChatTVC_getTextToSend(id self, SEL _cmd) {
+    NSString *(*orig)(id, SEL) = (NSString *(*)(id, SEL))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_getTextToSend"));
+    NSString *text = orig ? orig(self, _cmd) : nil;
+    if (text && text.length > 0) {
+        NSString *effFont = getEffectiveFont();
+        if (effFont) {
+            text = [ZaloModFontHelper convertText:text toStyle:effFont];
+        }
+    }
+    return text;
+}
+
+static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _cmd, NSString *text, BOOL needCreateBubble) {
+    NSString *styledText = text;
+    if (text && text.length > 0) {
+        NSString *effFont = getEffectiveFont();
+        if (effFont) {
+            styledText = [ZaloModFontHelper convertText:text toStyle:effFont];
+        }
+    }
+    void (*orig)(id, SEL, NSString *, BOOL) = (void (*)(id, SEL, NSString *, BOOL))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendMessageWithText:needCreateBubble:"));
+    if (orig) orig(self, _cmd, styledText, needCreateBubble);
+}
+
+static id hook_BaseChatTVC_createChatToSendWithMessage(id self, SEL _cmd, NSString *message, int mediaType, NSString *clientMsgId) {
+    NSString *styledMsg = message;
+    if (message && message.length > 0) {
+        NSString *effFont = getEffectiveFont();
+        if (effFont) {
+            styledMsg = [ZaloModFontHelper convertText:message toStyle:effFont];
+        }
+    }
+    id (*orig)(id, SEL, NSString *, int, NSString *) = (id (*)(id, SEL, NSString *, int, NSString *))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_createChatToSendWithMessage:mediaType:clientMsgId:"));
+    id chat = orig ? orig(self, _cmd, styledMsg, mediaType, clientMsgId) : nil;
+    if (chat) {
+        NSInteger ttlSecs = [ZaloModViewController customTTLSeconds];
+        if (ttlSecs > 0 && [chat respondsToSelector:sel_registerName("setTtl:")]) {
+            ((void (*)(id, SEL, long long))objc_msgSend)(chat, sel_registerName("setTtl:"), (long long)ttlSecs);
+        }
+        markChatAsOriginalIfPhoto(chat);
+    }
+    return chat;
+}
+
+// Duyệt cây UIView để áp dụng Màu Chữ và Cỡ Chữ (Chữ To) lên các Bong Bóng Tin Nhắn trong Chat
+static void recursivelyStyleCellView(UIView *view, UIColor *color, CGFloat fontSize) {
+    if (!view) return;
+    @try {
+        if ([view isKindOfClass:[UILabel class]]) {
+            UILabel *lbl = (UILabel *)view;
+            if (lbl.text.length > 0 && lbl.font.pointSize >= 11.5) {
+                if (color) lbl.textColor = color;
+                if (fontSize > 0) {
+                    UIFontDescriptor *desc = lbl.font.fontDescriptor;
+                    if (desc) {
+                        lbl.font = [UIFont fontWithDescriptor:desc size:fontSize];
+                    } else {
+                        lbl.font = [UIFont systemFontOfSize:fontSize];
+                    }
+                }
+            }
+        } else if ([view isKindOfClass:[UITextView class]]) {
+            UITextView *tv = (UITextView *)view;
+            if (tv.text.length > 0) {
+                if (color) tv.textColor = color;
+                if (fontSize > 0) {
+                    UIFontDescriptor *desc = tv.font.fontDescriptor;
+                    if (desc) {
+                        tv.font = [UIFont fontWithDescriptor:desc size:fontSize];
+                    } else {
+                        tv.font = [UIFont systemFontOfSize:fontSize];
+                    }
+                }
+            }
+        }
+        for (UIView *sub in view.subviews) {
+            recursivelyStyleCellView(sub, color, fontSize);
+        }
+    } @catch (NSException *e) {}
+}
+
+static void hook_BaseChatTVC_willDisplayCell_forItemAtIndexPath(id self, SEL _cmd, id cell, id indexPath) {
+    void (*orig)(id, SEL, id, id) = (void (*)(id, SEL, id, id))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_willDisplayCell:forItemAtIndexPath:"));
+    if (orig) orig(self, _cmd, cell, indexPath);
+
+    @try {
+        UIColor *textColor = [ZaloModViewController selectedTextColor];
+        CGFloat customSize = [ZaloModViewController customFontSize];
+        if (textColor || customSize > 0) {
+            if ([cell isKindOfClass:[UIView class]]) {
+                recursivelyStyleCellView((UIView *)cell, textColor, customSize);
+            }
+        }
+    } @catch (NSException *e) {}
 }
 
 // Hook ZAChatSendingManager: Nơi gửi đi tất cả tin nhắn & ảnh của người dùng (100% Outgoing)
@@ -770,6 +879,42 @@ static void installAllZaloModHooks(void) {
             }
         }
 
+        // Hook BaseChatTVC: Đổi font, TTL và màu sắc chat bubble 100% không bao giờ mất!
+        Class baseChatTVCCls = objc_getClass("BaseChatTVC");
+        if (baseChatTVCCls) {
+            Method mGetText = class_getInstanceMethod(baseChatTVCCls, sel_registerName("getTextToSend"));
+            if (mGetText) {
+                IMP orig = method_getImplementation(mGetText);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_getTextToSend"), orig, method_getTypeEncoding(mGetText));
+                method_setImplementation(mGetText, (IMP)hook_BaseChatTVC_getTextToSend);
+                NSLog(@"[DucLamXNgBao] Hook BaseChatTVC getTextToSend thành công!");
+            }
+
+            Method mSendMsg = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendMessageWithText:needCreateBubble:"));
+            if (mSendMsg) {
+                IMP orig = method_getImplementation(mSendMsg);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_sendMessageWithText:needCreateBubble:"), orig, method_getTypeEncoding(mSendMsg));
+                method_setImplementation(mSendMsg, (IMP)hook_BaseChatTVC_sendMessageWithText_needCreateBubble);
+                NSLog(@"[DucLamXNgBao] Hook BaseChatTVC sendMessageWithText:needCreateBubble: thành công!");
+            }
+
+            Method mCreateChat = class_getInstanceMethod(baseChatTVCCls, sel_registerName("createChatToSendWithMessage:mediaType:clientMsgId:"));
+            if (mCreateChat) {
+                IMP orig = method_getImplementation(mCreateChat);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_createChatToSendWithMessage:mediaType:clientMsgId:"), orig, method_getTypeEncoding(mCreateChat));
+                method_setImplementation(mCreateChat, (IMP)hook_BaseChatTVC_createChatToSendWithMessage);
+                NSLog(@"[DucLamXNgBao] Hook BaseChatTVC createChatToSendWithMessage:mediaType:clientMsgId: thành công!");
+            }
+
+            Method mWillDisp = class_getInstanceMethod(baseChatTVCCls, sel_registerName("willDisplayCell:forItemAtIndexPath:"));
+            if (mWillDisp) {
+                IMP orig = method_getImplementation(mWillDisp);
+                class_addMethod(baseChatTVCCls, sel_registerName("zaloMod_orig_willDisplayCell:forItemAtIndexPath:"), orig, method_getTypeEncoding(mWillDisp));
+                method_setImplementation(mWillDisp, (IMP)hook_BaseChatTVC_willDisplayCell_forItemAtIndexPath);
+                NSLog(@"[DucLamXNgBao] Hook BaseChatTVC willDisplayCell:forItemAtIndexPath: thành công!");
+            }
+        }
+
         // Hook ZAChatSendingManager: Gửi tin nhắn tự động áp dụng Font, TTL và ảnh Original
         Class sendMgrCls = objc_getClass("ZAChatSendingManager");
         if (sendMgrCls) {
@@ -847,7 +992,6 @@ static void installAllZaloModHooks(void) {
         }
 
         // Hook BaseChatTVC (Ghost Seen & Hide Typing)
-        Class baseChatTVCCls = objc_getClass("BaseChatTVC");
         if (baseChatTVCCls) {
             Method mVoiceTyping = class_getInstanceMethod(baseChatTVCCls, sel_registerName("sendTypingWithVoiceBoardType:"));
             if (mVoiceTyping) {
@@ -961,7 +1105,7 @@ static void installAllZaloModHooks(void) {
             NSLog(@"[DucLamXNgBao Hook] Đã kích hoạt nhãn Business chuẩn Native trong Zalo!");
         }
 
-        // 4b. Hook All ZStyles & Profile Music (ProfileLegacyUtils, SocialFeatureSetting, StickersBottomSheetPackInfo, ZMp3Manager, Swift ZStyle Models)
+        // 4b. Hook All ZStyles & Profile Music
         Class legacyUtilsCls = objc_getClass("ProfileLegacyUtils");
         if (legacyUtilsCls) {
             Method mSub = class_getClassMethod(legacyUtilsCls, sel_registerName("isZStyleSubscribed:"));
