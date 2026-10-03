@@ -27,8 +27,6 @@ static NSString * const kPrefSelectedFont       = @"ZaloMod_SelectedFont";
 static NSString * const kPrefCustomFontSize     = @"ZaloMod_CustomFontSize";
 static NSString * const kPrefSelectedTextColor  = @"ZaloMod_SelectedTextColor";
 
-static __weak id s_activeChatVC = nil;
-
 @interface ZaloModViewController () <UITextFieldDelegate>
 
 @property (nonatomic, strong) UIVisualEffectView *blurContainer;
@@ -776,8 +774,6 @@ static ZaloModViewController *_sharedMenuVC = nil;
     y += 288;
 
     self.tabBotView.frame = CGRectMake(0, 0, contentW, y + 20);
-
-    [self botRefreshAccountInfo];
 }
 
 
@@ -1208,11 +1204,20 @@ static ZaloModViewController *_sharedMenuVC = nil;
 }
 
 + (void)setActiveChatVC:(id)vc {
-    s_activeChatVC = vc;
+    // Không lưu con trỏ weak tĩnh tránh crash trong non-ARC runtime
 }
 
 + (id)activeChatVC {
-    return s_activeChatVC;
+    @try {
+        Class startupCls = objc_getClass("StartupFlowManager");
+        if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
+            id startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
+            if (startup && [startup respondsToSelector:sel_registerName("currentChatVC")]) {
+                return ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentChatVC"));
+            }
+        }
+    } @catch (NSException *e) {}
+    return nil;
 }
 
 - (void)updateBotStatusUI {
@@ -1232,65 +1237,74 @@ static ZaloModViewController *_sharedMenuVC = nil;
 }
 
 - (void)botRefreshAccountInfo {
-    Class startupCls = objc_getClass("StartupFlowManager");
-    id startup = nil;
-    if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
-        startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
-    }
+    @try {
+        Class startupCls = objc_getClass("StartupFlowManager");
+        id startup = nil;
+        if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
+            startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
+        }
 
-    id myAcc = nil;
-    if (startup) {
-        if ([startup respondsToSelector:sel_registerName("myAccountLogin")]) {
-            myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("myAccountLogin"));
-        }
-        if (!myAcc && [startup respondsToSelector:sel_registerName("currentAccountLogging")]) {
-            myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentAccountLogging"));
-        }
-    }
-
-    NSString *uid = nil;
-    NSString *name = nil;
-    NSString *phone = nil;
-
-    if (myAcc) {
-        if ([myAcc respondsToSelector:sel_registerName("userid")]) {
-            uid = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("userid"));
-        }
-        if ([myAcc respondsToSelector:sel_registerName("displayname")]) {
-            name = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("displayname"));
-        }
-        if ([myAcc respondsToSelector:sel_registerName("phone")]) {
-            phone = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("phone"));
-        }
-    }
-
-    if (!uid || uid.length == 0) {
-        Class zSharedCls = objc_getClass("ZSharedData");
-        if (zSharedCls && [zSharedCls respondsToSelector:sel_registerName("shared")]) {
-            id shared = ((id (*)(id, SEL))objc_msgSend)(zSharedCls, sel_registerName("shared"));
-            if (shared && [shared respondsToSelector:sel_registerName("myUserId")]) {
-                uid = ((id (*)(id, SEL))objc_msgSend)(shared, sel_registerName("myUserId"));
+        id myAcc = nil;
+        if (startup) {
+            if ([startup respondsToSelector:sel_registerName("myAccountLogin")]) {
+                myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("myAccountLogin"));
+            }
+            if (!myAcc && [startup respondsToSelector:sel_registerName("currentAccountLogging")]) {
+                myAcc = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentAccountLogging"));
             }
         }
-    }
 
-    self.botSelfUid = (uid && uid.length > 0) ? [NSString stringWithFormat:@"%@", uid] : @"Chưa đăng nhập";
-    self.botSelfName = (name && name.length > 0) ? name : @"Zalo User";
+        NSString *uid = nil;
+        NSString *name = nil;
+        NSString *phone = nil;
+        id raw = nil;
 
-    if (!self.botAdminList) {
-        self.botAdminList = [NSMutableArray array];
-    }
-    if (self.botSelfUid && ![self.botSelfUid isEqualToString:@"Chưa đăng nhập"]) {
-        if (![self.botAdminList containsObject:self.botSelfUid]) {
-            [self.botAdminList addObject:self.botSelfUid];
+        if (myAcc) {
+            if ([myAcc respondsToSelector:sel_registerName("userid")]) {
+                raw = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("userid"));
+                if (raw) uid = [NSString stringWithFormat:@"%@", raw];
+            }
+            if ([myAcc respondsToSelector:sel_registerName("displayname")]) {
+                raw = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("displayname"));
+                if (raw) name = [NSString stringWithFormat:@"%@", raw];
+            }
+            if ([myAcc respondsToSelector:sel_registerName("phone")]) {
+                raw = ((id (*)(id, SEL))objc_msgSend)(myAcc, sel_registerName("phone"));
+                if (raw) phone = [NSString stringWithFormat:@"%@", raw];
+            }
         }
-    }
 
-    if (self.lblBotAccInfo) {
-        self.lblBotAccInfo.text = [NSString stringWithFormat:@"👤 Tên: %@\n🆔 UID: %@\n📱 SĐT: %@", self.botSelfName, self.botSelfUid, phone ?: @"Ẩn"];
-    }
-    if (self.lblBotAdminInfo) {
-        self.lblBotAdminInfo.text = [NSString stringWithFormat:@"👑 Admin Bot (Tự lấy): %@\n🆔 UID: %@ • Quyền: SUPREME (Level 5)", self.botSelfName, self.botSelfUid];
+        if (!uid || uid.length == 0 || [uid isEqualToString:@"0"]) {
+            Class zSharedCls = objc_getClass("ZSharedData");
+            if (zSharedCls && [zSharedCls respondsToSelector:sel_registerName("shared")]) {
+                id shared = ((id (*)(id, SEL))objc_msgSend)(zSharedCls, sel_registerName("shared"));
+                if (shared && [shared respondsToSelector:sel_registerName("myUserId")]) {
+                    raw = ((id (*)(id, SEL))objc_msgSend)(shared, sel_registerName("myUserId"));
+                    if (raw) uid = [NSString stringWithFormat:@"%@", raw];
+                }
+            }
+        }
+
+        self.botSelfUid = (uid && uid.length > 0 && ![uid isEqualToString:@"0"]) ? uid : @"Chưa đăng nhập";
+        self.botSelfName = (name && name.length > 0) ? name : @"Zalo User";
+
+        if (!self.botAdminList) {
+            self.botAdminList = [NSMutableArray array];
+        }
+        if (self.botSelfUid && ![self.botSelfUid isEqualToString:@"Chưa đăng nhập"]) {
+            if (![self.botAdminList containsObject:self.botSelfUid]) {
+                [self.botAdminList addObject:self.botSelfUid];
+            }
+        }
+
+        if (self.lblBotAccInfo) {
+            self.lblBotAccInfo.text = [NSString stringWithFormat:@"👤 Tên: %@\n🆔 UID: %@\n📱 SĐT: %@", self.botSelfName, self.botSelfUid, phone ?: @"Ẩn"];
+        }
+        if (self.lblBotAdminInfo) {
+            self.lblBotAdminInfo.text = [NSString stringWithFormat:@"👑 Admin Bot (Tự lấy): %@\n🆔 UID: %@ • Quyền: SUPREME (Level 5)", self.botSelfName, self.botSelfUid];
+        }
+    } @catch (NSException *e) {
+        NSLog(@"[ZaloMod] botRefreshAccountInfo error: %@", e);
     }
 }
 
@@ -1359,11 +1373,12 @@ static ZaloModViewController *_sharedMenuVC = nil;
 }
 
 + (void)processBotIncomingMessage:(NSString *)text fromUid:(NSString *)fromUid toThreadId:(NSString *)toThreadId isGroup:(BOOL)isGroup chatVC:(id)chatVC {
-    if (![self isBotRunning]) return;
-    if (!text || text.length == 0) return;
+    @try {
+        if (![self isBotRunning]) return;
+        if (!text || text.length == 0) return;
 
-    NSString *pfx = [self botPrefix];
-    if (![text hasPrefix:pfx]) return;
+        NSString *pfx = [self botPrefix];
+        if (![text hasPrefix:pfx]) return;
 
     ZaloModViewController *menu = [ZaloModViewController sharedInstance];
     if (!menu.botSelfUid || [menu.botSelfUid isEqualToString:@"Chưa đăng nhập"]) {
@@ -1651,40 +1666,47 @@ static ZaloModViewController *_sharedMenuVC = nil;
     if (reply && reply.length > 0) {
         [self botSendMessage:reply toThreadId:toThreadId chatVC:chatVC];
     }
+    } @catch (NSException *e) {
+        NSLog(@"[ZaloMod] processBotIncomingMessage error: %@", e);
+    }
 }
 
 + (void)botSendMessage:(NSString *)text toThreadId:(NSString *)threadId chatVC:(id)chatVC {
     if (!text || text.length == 0) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        id activeVC = chatVC ?: [ZaloModViewController activeChatVC];
-        if (!activeVC) {
-            Class startupCls = objc_getClass("StartupFlowManager");
-            if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
-                id startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
-                if (startup && [startup respondsToSelector:sel_registerName("currentChatVC")]) {
-                    activeVC = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentChatVC"));
-                }
-            }
-        }
-
-        if (activeVC && [activeVC respondsToSelector:sel_registerName("sendMessageWithText:needCreateBubble:")]) {
-            ((void (*)(id, SEL, NSString *, BOOL))objc_msgSend)(activeVC, sel_registerName("sendMessageWithText:needCreateBubble:"), text, YES);
-        } else {
-            Class cdmCls = objc_getClass("ChatDataManager");
-            Class ceCls = objc_getClass("ChatEntity");
-            if (cdmCls && ceCls && [cdmCls respondsToSelector:sel_registerName("sharedManager")]) {
-                id cdm = ((id (*)(id, SEL))objc_msgSend)(cdmCls, sel_registerName("sharedManager"));
-                ZaloModViewController *menu = [ZaloModViewController sharedInstance];
-                if ([ceCls respondsToSelector:sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:")]) {
-                    id newChat = ((id (*)(id, SEL, NSString *, NSString *, NSString *, NSString *, int, id))objc_msgSend)(
-                        [ceCls alloc],
-                        sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:"),
-                        text, menu.botSelfName ?: @"Bot", menu.botSelfUid ?: @"", threadId ?: @"", 1, nil);
-                    if (newChat && [cdm respondsToSelector:sel_registerName("addChat:byUserId:willAlert:fromSrc:")]) {
-                        ((void (*)(id, SEL, id, id, BOOL, long long))objc_msgSend)(cdm, sel_registerName("addChat:byUserId:willAlert:fromSrc:"), newChat, threadId, YES, 0);
+        @try {
+            id activeVC = chatVC ?: [ZaloModViewController activeChatVC];
+            if (!activeVC) {
+                Class startupCls = objc_getClass("StartupFlowManager");
+                if (startupCls && [startupCls respondsToSelector:sel_registerName("sharedStartupFlowManager")]) {
+                    id startup = ((id (*)(id, SEL))objc_msgSend)(startupCls, sel_registerName("sharedStartupFlowManager"));
+                    if (startup && [startup respondsToSelector:sel_registerName("currentChatVC")]) {
+                        activeVC = ((id (*)(id, SEL))objc_msgSend)(startup, sel_registerName("currentChatVC"));
                     }
                 }
             }
+
+            if (activeVC && [activeVC respondsToSelector:sel_registerName("sendMessageWithText:needCreateBubble:")]) {
+                ((void (*)(id, SEL, NSString *, BOOL))objc_msgSend)(activeVC, sel_registerName("sendMessageWithText:needCreateBubble:"), text, YES);
+            } else {
+                Class cdmCls = objc_getClass("ChatDataManager");
+                Class ceCls = objc_getClass("ChatEntity");
+                if (cdmCls && ceCls && [cdmCls respondsToSelector:sel_registerName("sharedManager")]) {
+                    id cdm = ((id (*)(id, SEL))objc_msgSend)(cdmCls, sel_registerName("sharedManager"));
+                    ZaloModViewController *menu = [ZaloModViewController sharedInstance];
+                    if ([ceCls respondsToSelector:sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:")]) {
+                        id newChat = ((id (*)(id, SEL, NSString *, NSString *, NSString *, NSString *, int, id))objc_msgSend)(
+                            [ceCls alloc],
+                            sel_registerName("initNoSendLocalChatWithMessage:withDisplayname:fromUserId:toUserId:withMediaType:withClientIdIfNeed:"),
+                            text, menu.botSelfName ?: @"Bot", menu.botSelfUid ?: @"", threadId ?: @"", 1, nil);
+                        if (newChat && [cdm respondsToSelector:sel_registerName("addChat:byUserId:willAlert:fromSrc:")]) {
+                            ((void (*)(id, SEL, id, id, BOOL, long long))objc_msgSend)(cdm, sel_registerName("addChat:byUserId:willAlert:fromSrc:"), newChat, threadId, YES, 0);
+                        }
+                    }
+                }
+            }
+        } @catch (NSException *e) {
+            NSLog(@"[ZaloMod] botSendMessage error: %@", e);
         }
     });
 }
