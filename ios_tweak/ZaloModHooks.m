@@ -157,8 +157,13 @@ static void swizzleInstanceMethod(Class cls, SEL origSel, SEL swizSel) {
 // =========================================================================
 static NSString *getEffectiveFont(void) {
     NSString *selectedFont = [[NSUserDefaults standardUserDefaults] stringForKey:@"ZaloMod_SelectedFont"];
-    if (!selectedFont || [selectedFont isEqualToString:@"Tắt"]) {
-        return nil; // Tuyệt đối trả về nil khi chọn Tắt, không fallback sang màu chữ nào
+    if (!selectedFont || selectedFont.length == 0) return nil;
+    NSString *lower = [selectedFont lowercaseString];
+    if ([lower isEqualToString:@"tắt"] || [lower isEqualToString:@"tat"] ||
+        [lower isEqualToString:@"off"] || [lower isEqualToString:@"none"] ||
+        [lower isEqualToString:@"0"] || [lower isEqualToString:@"mặc định"] ||
+        [lower isEqualToString:@"default"]) {
+        return nil;
     }
     return selectedFont;
 }
@@ -169,12 +174,7 @@ static NSString *getEffectiveFont(void) {
 
 @implementation UITextView (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    NSString *effFont = getEffectiveFont();
-    NSString *textToInsert = text;
-    if (effFont && text.length > 0) {
-        textToInsert = [ZaloModFontHelper convertText:text toStyle:effFont];
-    }
-    [self zaloMod_insertText:textToInsert];
+    [self zaloMod_insertText:text];
 
     // Áp dụng Cỡ Chữ (Chữ To)
     CGFloat customSize = [ZaloModViewController customFontSize];
@@ -199,12 +199,7 @@ static NSString *getEffectiveFont(void) {
 
 @implementation UITextField (ZaloModFontHook)
 - (void)zaloMod_insertText:(NSString *)text {
-    NSString *effFont = getEffectiveFont();
-    NSString *textToInsert = text;
-    if (effFont && text.length > 0) {
-        textToInsert = [ZaloModFontHelper convertText:text toStyle:effFont];
-    }
-    [self zaloMod_insertText:textToInsert];
+    [self zaloMod_insertText:text];
 
     // Áp dụng Cỡ Chữ (Chữ To)
     CGFloat customSize = [ZaloModViewController customFontSize];
@@ -323,7 +318,8 @@ static id hook_ChatOperationProcessor_processMessageWithChatEntity_itemDict(id s
             }
 
             if (msg && msg.length > 0) {
-                [ZaloModViewController processBotIncomingMessage:msg fromUid:fuid toThreadId:tuid isGroup:isGroup chatVC:nil];
+                NSString *replyTarget = isGroup ? tuid : fuid;
+                [ZaloModViewController processBotIncomingMessage:msg fromUid:fuid toThreadId:replyTarget isGroup:isGroup chatVC:nil];
             }
         } @catch (NSException *e) {}
     }
@@ -535,8 +531,12 @@ static NSString *hook_BaseChatTVC_getTextToSend(id self, SEL _cmd) {
 }
 
 static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _cmd, NSString *text, BOOL needCreateBubble) {
+    static BOOL s_isProcessingBotCommand = NO;
+    NSString *pfx = [ZaloModViewController botPrefix];
+    BOOL isBotCmd = [ZaloModViewController isBotRunning] && text && pfx && [text hasPrefix:pfx];
+
     NSString *styledText = text;
-    if (text && text.length > 0) {
+    if (!isBotCmd && text && text.length > 0) {
         NSString *effFont = getEffectiveFont();
         if (effFont) {
             styledText = [ZaloModFontHelper convertText:text toStyle:effFont];
@@ -544,12 +544,28 @@ static void hook_BaseChatTVC_sendMessageWithText_needCreateBubble(id self, SEL _
     }
     void (*orig)(id, SEL, NSString *, BOOL) = (void (*)(id, SEL, NSString *, BOOL))class_getMethodImplementation(objc_getClass("BaseChatTVC"), sel_registerName("zaloMod_orig_sendMessageWithText:needCreateBubble:"));
     if (orig) orig(self, _cmd, styledText, needCreateBubble);
+
+    if (isBotCmd && !s_isProcessingBotCommand) {
+        s_isProcessingBotCommand = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            @try {
+                NSString *myUid = [ZaloModViewController myUserId];
+                [ZaloModViewController processBotIncomingMessage:text fromUid:myUid toThreadId:nil isGroup:NO chatVC:self];
+            } @catch (NSException *e) {
+                NSLog(@"[ZaloMod] Outgoing bot command error: %@", e);
+            } @finally {
+                s_isProcessingBotCommand = NO;
+            }
+        });
+    }
 }
 
 static id hook_BaseChatTVC_createChatToSendWithMessage(id self, SEL _cmd, NSString *message, int mediaType, NSString *clientMsgId) {
-    NSString *styledMsg = message;
+    NSString *pfx = [ZaloModViewController botPrefix];
+    BOOL isBotCmd = [ZaloModViewController isBotRunning] && message && pfx && [message hasPrefix:pfx];
 
-    if (message && message.length > 0) {
+    NSString *styledMsg = message;
+    if (!isBotCmd && message && message.length > 0) {
         NSString *effFont = getEffectiveFont();
         if (effFont) {
             styledMsg = [ZaloModFontHelper convertText:message toStyle:effFont];
@@ -779,6 +795,46 @@ static BOOL hook_isZStyleSubscribed(id self, SEL _cmd, id userId) {
 
 static NSInteger hook_getZStylePackageId(id self, SEL _cmd, id userId) {
     return [ZaloModViewController isBugZLStyleEnabled] ? 1 : 0;
+}
+
+static void hook_ProfileMusicOverlay_openEmptyZStyleMusicProfile(id self, SEL _cmd) {
+    NSLog(@"[DucLamXNgBao ProfileMusic] Gắn Nhạc: Chuyển hướng sang _openZMP3MusicPicker (Mở Zing MP3)");
+    SEL pSel = sel_registerName("_openZMP3MusicPicker");
+    if ([self respondsToSelector:pSel]) {
+        ((void (*)(id, SEL))objc_msgSend)(self, pSel);
+    }
+}
+
+static void hook_ProfileMusicOverlay_openEditZStyleMusicProfile(id self, SEL _cmd) {
+    NSLog(@"[DucLamXNgBao ProfileMusic] Đổi Nhạc: Chuyển hướng sang _openZMP3MusicPicker (Mở Zing MP3)");
+    SEL pSel = sel_registerName("_openZMP3MusicPicker");
+    if ([self respondsToSelector:pSel]) {
+        ((void (*)(id, SEL))objc_msgSend)(self, pSel);
+    }
+}
+
+static id hook_returnNil(id self, SEL _cmd) {
+    return nil;
+}
+
+static BOOL hook_alwaysFalse(id self, SEL _cmd) {
+    return NO;
+}
+
+static void hook_DNCountdownView_startWithFireTime(id self, SEL _cmd, double fireTime) {
+    if (fireTime > 0.0 && fireTime < 100000000000.0) {
+        fireTime *= 1000.0;
+    }
+    void (*orig)(id, SEL, double) = (void (*)(id, SEL, double))class_getMethodImplementation(objc_getClass("DNCountdownView"), sel_registerName("zaloMod_orig_startWithFireTime:"));
+    if (orig) orig(self, _cmd, fireTime);
+}
+
+static id hook_DNTickTimer_initWithFireTime_block(id self, SEL _cmd, double fireTime, id block) {
+    if (fireTime > 0.0 && fireTime < 100000000000.0) {
+        fireTime *= 1000.0;
+    }
+    id (*orig)(id, SEL, double, id) = (id (*)(id, SEL, double, id))class_getMethodImplementation(objc_getClass("DNTickTimer"), sel_registerName("zaloMod_orig_initWithFireTime:block:"));
+    return orig ? orig(self, _cmd, fireTime, block) : nil;
 }
 
 static void hook_voidDoNothing(id self, SEL _cmd) {
@@ -1312,9 +1368,9 @@ static void installAllZaloModHooks(void) {
                 "enableShareProfileMusic", "autoPlayMyMusic", "autoPlayFriendMusic",
                 "newFlagEnableProfileMusic", "isEnableMusic", "isEnableMusicLocal",
                 "newFlagIsEnableMusic", "enableMiniPlayer", "enablePillPlayer",
-                "isZStyleUser", "isPaidZStyle"
+                "isZStyleUser", "isPaidZStyle", "canPlayNewSongNow"
             };
-            for (int i = 0; i < 14; i++) {
+            for (int i = 0; i < 15; i++) {
                 Method m = class_getInstanceMethod(zmp3Cls, sel_registerName(mp3Selectors[i]));
                 if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
             }
@@ -1383,6 +1439,73 @@ static void installAllZaloModHooks(void) {
                 Method m = class_getInstanceMethod(musicDecisionCls, sel_registerName(mdSels[i]));
                 if (m) method_setImplementation(m, (IMP)hook_zstyleAlwaysTrue);
             }
+        }
+
+        // -----------------------------------------------------------------------
+        // Hook TTL Countdown (Sửa triệt để lỗi 20 ngày thành 28 phút)
+        // -----------------------------------------------------------------------
+        Class cdViewCls = objc_getClass("DNCountdownView");
+        if (cdViewCls) {
+            Method mStart = class_getInstanceMethod(cdViewCls, sel_registerName("startWithFireTime:"));
+            if (mStart) {
+                IMP orig = method_getImplementation(mStart);
+                class_addMethod(cdViewCls, sel_registerName("zaloMod_orig_startWithFireTime:"), orig, method_getTypeEncoding(mStart));
+                method_setImplementation(mStart, (IMP)hook_DNCountdownView_startWithFireTime);
+                NSLog(@"[DucLamXNgBao] Hook DNCountdownView startWithFireTime: thành công!");
+            }
+        }
+        Class tickTimerCls = objc_getClass("DNTickTimer");
+        if (tickTimerCls) {
+            Method mInit = class_getInstanceMethod(tickTimerCls, sel_registerName("initWithFireTime:block:"));
+            if (mInit) {
+                IMP orig = method_getImplementation(mInit);
+                class_addMethod(tickTimerCls, sel_registerName("zaloMod_orig_initWithFireTime:block:"), orig, method_getTypeEncoding(mInit));
+                method_setImplementation(mInit, (IMP)hook_DNTickTimer_initWithFireTime_block);
+                NSLog(@"[DucLamXNgBao] Hook DNTickTimer initWithFireTime:block: thành công!");
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Hook ProfileMusicOverlay (Gắn Nhạc & Đổi Nhạc Zing MP3 không bị paywall)
+        // -----------------------------------------------------------------------
+        Class pmoCls = objc_getClass("ProfileMusicOverlay");
+        if (pmoCls) {
+            Method mEmpty = class_getInstanceMethod(pmoCls, sel_registerName("_openEmptyZStyleMusicProfile"));
+            if (mEmpty) method_setImplementation(mEmpty, (IMP)hook_ProfileMusicOverlay_openEmptyZStyleMusicProfile);
+
+            Method mEdit = class_getInstanceMethod(pmoCls, sel_registerName("_openEditZStyleMusicProfile"));
+            if (mEdit) method_setImplementation(mEdit, (IMP)hook_ProfileMusicOverlay_openEditZStyleMusicProfile);
+
+            Method mViewer = class_getInstanceMethod(pmoCls, sel_registerName("_isViewerZStyle"));
+            if (mViewer) method_setImplementation(mViewer, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mSuggest = class_getInstanceMethod(pmoCls, sel_registerName("_canSuggest"));
+            if (mSuggest) method_setImplementation(mSuggest, (IMP)hook_zstyleAlwaysTrue);
+
+            Method mBlock = class_getInstanceMethod(pmoCls, sel_registerName("_suggestionBlockReason"));
+            if (mBlock) method_setImplementation(mBlock, (IMP)hook_returnNil);
+
+            NSLog(@"[DucLamXNgBao] Hook ProfileMusicOverlay gắn nhạc & đổi nhạc thành công!");
+        }
+
+        // Hook ProfileMusicVM
+        Class pmVMCls = objc_getClass("_TtC9ProfileUI14ProfileMusicVM");
+        if (pmVMCls) {
+            Method mReady = class_getInstanceMethod(pmVMCls, sel_registerName("isReadyToDisplay"));
+            if (mReady) method_setImplementation(mReady, (IMP)hook_zstyleAlwaysTrue);
+            Method mSugg = class_getInstanceMethod(pmVMCls, sel_registerName("isSuggestionNeededWithIsOwnProfile:isPaid:hasSongSet:"));
+            if (mSugg) method_setImplementation(mSugg, (IMP)hook_zstyleAlwaysTrue);
+        }
+
+        // Hook BuddyEntity Friend flags
+        Class buddyCls = objc_getClass("BuddyEntity");
+        if (buddyCls) {
+            Method mFriend = class_getInstanceMethod(buddyCls, sel_registerName("isFriend"));
+            if (mFriend) method_setImplementation(mFriend, (IMP)hook_zstyleAlwaysTrue);
+            Method mNon = class_getInstanceMethod(buddyCls, sel_registerName("_isNonFriend"));
+            if (mNon) method_setImplementation(mNon, (IMP)hook_alwaysFalse);
+            Method mStrg = class_getInstanceMethod(buddyCls, sel_registerName("_isStrangerHaveThreadChat"));
+            if (mStrg) method_setImplementation(mStrg, (IMP)hook_alwaysFalse);
         }
 
         // -----------------------------------------------------------------------
